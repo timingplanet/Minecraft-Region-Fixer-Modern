@@ -1,0 +1,2534 @@
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/.github/workflows/tests.yml /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/.github/workflows/tests.yml
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/.github/workflows/tests.yml	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/.github/workflows/tests.yml	2026-08-25 17:59:16.000000000 +0000
+@@ -0,0 +1,36 @@
++name: compatibility-tests
++
++on:
++  push:
++  pull_request:
++
++jobs:
++  test:
++    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
++    runs-on: ${{ matrix.os }}
++    strategy:
++      fail-fast: false
++      matrix:
++        os: [ubuntu-latest, windows-latest]
++        python-version: ['3.9', '3.11', '3.13']
++
++    steps:
++      - name: Check out source
++        uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: ${{ matrix.python-version }}
++
++      - name: Compile Python source
++        run: python -m compileall -q regionfixer.py regionfixer_core nbt mutf8 progressbar tests
++
++      - name: Run compatibility tests
++        run: python -m unittest discover -s tests -v
++
++      - name: Verify CLI help
++        run: python regionfixer.py --help
++
++      - name: Verify CLI version
++        run: python regionfixer.py --version
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/.gitignore /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/.gitignore
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/.gitignore	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/.gitignore	2026-08-25 18:03:35.000000000 +0000
+@@ -1,2 +1,13 @@
+-# bytecompiled python files
++# Python bytecode / caches
+ *.pyc
++__pycache__/
++.pytest_cache/
++
++# Local build/output
++build/
++dist/
++*.egg-info/
++
++# Local logs / reports
++*.log
++error.log
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/CHANGELOG.md /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/CHANGELOG.md
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/CHANGELOG.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/CHANGELOG.md	2026-08-25 18:13:50.296495387 +0000
+@@ -0,0 +1,49 @@
++# Changelog
++
++## 0.4.0 - Modern world compatibility
++
++First release of the modern compatibility fork. The goal of this release is to
++extend the existing Region Fixer without changing its normal repair workflow.
++
++### Added
++
++- Namespaced dimension discovery under `dimensions/<namespace>/<dimension>/`.
++- Canonical dimension matching so modern worlds can use backups made with the
++  legacy Overworld, Nether, and End directory layout, and vice versa.
++- `players/data` discovery while retaining legacy player-data paths.
++- Recursive namespaced `.dat` discovery in the root `data` tree.
++- Dimension-specific `.dat` discovery under namespaced dimension `data` trees.
++- Region compression ID 3 (uncompressed) support.
++- Region compression ID 4 (Minecraft LZ4 block stream) support.
++- External oversized `.mcc` chunk support for reads, writes, deletes, and full
++  region replacements.
++- `last_id.dat` raw-NBT handling alongside legacy `idcounts.dat`.
++- Detailed terminal scan summary with file, chunk, region, player/data, and
++  per-dimension health information.
++- `--version` command-line option.
++- Windows `RegionFixer.bat` launcher with drag-and-drop world support.
++- Regression tests for legacy world layouts and traditional gzip/zlib region
++  compression.
++- Tests for modern dimension layouts, LZ4, uncompressed chunks, `.mcc`
++  sidecars, and summary/API compatibility.
++- GitHub Actions compatibility test workflow.
++
++### Fixed
++
++- Modern worlds no longer appear to have no region data solely because their
++  dimensions are stored outside the legacy world-root locations.
++- Backup replacement no longer reuses a stale RegionSet when a backup lacks the
++  requested matching dimension/type.
++- Cross-dimension chunk replacement no longer overwrites the requested problem
++  status or collides cached region scans with another dimension at the same
++  region coordinates.
++- Legacy gzip chunk writes now use a writable gzip stream.
++- Full region deletion/replacement now handles matching external `.mcc`
++  sidecars to avoid orphaning or losing oversized chunk payloads.
++
++### Compatibility promise
++
++The original command-line repair options remain in place. Legacy
++`region`/`DIM-1`/`DIM1` worlds and gzip/zlib chunks remain supported and are
++covered by regression tests. Human-readable reporting is improved while the
++programmatic `generate_report(False)` return shape remains compatible.
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/FORK_NOTICE.md /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/FORK_NOTICE.md
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/FORK_NOTICE.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/FORK_NOTICE.md	2026-08-25 17:59:16.000000000 +0000
+@@ -0,0 +1,17 @@
++# Fork notice
++
++This repository is an unofficial maintained compatibility fork of
++**Minecraft Region Fixer**, originally created by Alejandro Aguilera
++(Fenixin):
++
++https://github.com/Fenixin/Minecraft-Region-Fixer
++
++The purpose of the fork is to preserve the original Region Fixer behavior while
++adding compatibility with newer Minecraft Java Edition world-storage and region
++formats.
++
++Original copyright and contributor notices are intentionally retained in the
++source files. Redistribution and modification are governed by the GNU General
++Public License included in `COPYING.txt`.
++
++This project is not affiliated with or endorsed by Mojang Studios or Microsoft.
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/MODERN_WORLD_COMPATIBILITY.md /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/MODERN_WORLD_COMPATIBILITY.md
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/MODERN_WORLD_COMPATIBILITY.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/MODERN_WORLD_COMPATIBILITY.md	2026-08-25 18:13:50.295697657 +0000
+@@ -0,0 +1,95 @@
++# Modern world compatibility
++
++Minecraft Region Fixer Modern extends the original Region Fixer for current
++Java Edition world storage while retaining legacy layouts and the original
++command-line workflow.
++
++## World layout support
++
++Modern worlds can store dimensions under:
++
++`dimensions/<namespace>/<dimension>/`
++
++This fork discovers `region`, `poi`, and `entities` folders in that layout and
++still discovers the older locations.
++
++Canonical vanilla mappings are used when matching backups:
++
++- root `region` / `poi` / `entities` -> `minecraft/overworld`
++- `DIM-1` -> `minecraft/the_nether`
++- `DIM1` -> `minecraft/the_end`
++
++That allows modern and legacy worlds/backups to be matched across the storage
++layout migration.
++
++## Other modern storage changes covered
++
++- UUID player data under `players/data`, with legacy `playerdata` retained.
++- Recursively namespaced `.dat` files under the root `data/` folder.
++- Dimension-specific `.dat` files under namespaced dimension `data/` folders.
++- `last_id.dat` is handled as raw uncompressed NBT alongside legacy
++  `idcounts.dat`.
++
++## Region-file support
++
++The bundled region reader supports:
++
++- compression 1: gzip
++- compression 2: zlib
++- compression 3: uncompressed
++- compression 4: lz4-java `LZ4Block` streams
++- external oversized `c.<chunkX>.<chunkZ>.mcc` payloads
++
++LZ4 decoding supports both raw and compressed LZ4Block blocks and validates the
++full 32-bit XXH32 checksum used by lz4-java.
++
++Oversized repaired chunks are written to `.mcc` sidecars when they exceed the
++Anvil location-table sector limit. Region deletion/replacement also removes or
++copies the associated sidecars.
++
++## Compatibility fixes included
++
++While adding regression coverage, older repair issues were also corrected:
++
++- gzip chunk writes open the gzip stream in write mode so replacement of older
++  gzip-compressed chunks works correctly;
++- chunk replacement no longer overwrites the requested problem status after
++  processing one chunk;
++- cached backup region scans are separated by dimension/type so identically
++  numbered regions in different dimensions do not collide.
++
++## Scan reporting
++
++The terminal scan report now provides a detailed summary of file counts, chunk
++health, region health, player/data health, and per-dimension results. The
++existing `--log` option remains the source for exact problematic chunk/file
++locations, keeping large-world console output readable.
++
++## CLI compatibility
++
++The existing Region Fixer options are intentionally retained. `--version` is
++added, but existing options are not renamed or removed.
++
++A normal scan remains:
++
++```bash
++python regionfixer.py "/path/to/world"
++```
++
++On Windows, `RegionFixer.bat` can be used as a small launcher or as a drag-and-
++drop scan target.
++
++## Validation
++
++Run all compatibility tests with:
++
++```bash
++python -m unittest discover -s tests -v
++```
++
++The suite covers legacy and modern layouts, old and new region compression,
++LZ4, `.mcc` chunks, cross-layout backup matching/replacement, map-id NBT files,
++scan-summary compatibility, and end-to-end CLI scans.
++
++Always keep a separate untouched backup before using destructive repair/delete
++options on a real world.
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/README.rst /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/README.rst
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/README.rst	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/README.rst	2026-08-25 18:13:50.294984926 +0000
+@@ -1,86 +1,151 @@
+-======================
+-Minecraft Region Fixer
+-======================
++=============================
++Minecraft Region Fixer Modern
++=============================
++
++An unofficial maintained compatibility fork of Alejandro Aguilera's
++``Minecraft Region Fixer``. It keeps the original command-line behavior and
++repair workflow while extending world discovery and region-file handling for
++current Minecraft Java Edition worlds.
+ 
+-By Alejandro Aguilera (Fenixin) 
++The original project is:
++https://github.com/Fenixin/Minecraft-Region-Fixer
+ 
+-Locates problems and tries to fix Minecraft worlds (or region files).
++What this fork is trying to preserve
++====================================
+ 
+-Minecraft Region Fixer tries to fix corrupted chunks in region files using old backup copies
+-of the Minecraft world. If you don't have a copy, you can eliminate the
+-corrupted chunks making Minecraft regenerate them.
++Compatibility comes first. Existing Region Fixer commands and repair options
++remain available, and legacy world layouts continue to be supported. Modern
++support is added underneath the existing scanner rather than replacing it with
++a new workflow.
++
++The compatibility test suite covers both old-style worlds and modern worlds.
++Before a release, both sets of tests should pass.
++
++Modern Minecraft support
++========================
++
++This fork currently adds support for:
++
++* Namespaced default and custom dimension storage under
++  ``dimensions/<namespace>/<dimension>``.
++* Cross-layout backup matching between legacy ``region``/``DIM-1``/``DIM1``
++  folders and the namespaced Overworld/Nether/End locations.
++* Player UUID data under ``players/data`` while retaining ``playerdata``.
++* Namespaced root and dimension-specific ``data`` folders.
++* Region compression IDs 1 (gzip), 2 (zlib), 3 (uncompressed), and 4
++  (Minecraft's LZ4 block stream).
++* External oversized chunk payloads stored as ``c.<x>.<z>.mcc`` files.
++* Reading, deleting, replacing, and writing external oversized chunks.
++
++Older Minecraft support
++=======================
++
++The original layouts remain supported, including:
++
++* Overworld regions in ``region``.
++* Nether regions in ``DIM-1``.
++* End regions in ``DIM1``.
++* Legacy ``playerdata`` and old ``players`` data files.
++* Traditional gzip and zlib Anvil chunk compression.
++* Direct scanning of individual ``.mca`` region files.
++* Existing backup replacement, deletion, fixing, logging, verbose scanning,
++  entity limits, and multiprocessing options.
++
++Detailed scan summary
++=====================
++
++A normal world scan finishes with a structured summary showing:
++
++* Overall ``CLEAN`` or ``ISSUES FOUND`` result.
++* World path and detected storage layout.
++* ``DataVersion`` when it is present in ``level.dat``.
++* Region/Level, POI, Entities, player, and world-data file counts.
++* Total and healthy chunks plus every chunk problem category.
++* Total and healthy region files plus every region problem category.
++* Player/data-file health.
++* A per-dimension and per-region-type breakdown with region, chunk, and issue
++  counts.
++
++The summary is intentionally bounded and readable even for very large worlds.
++Exact problematic chunk/file locations remain available through the original
++``--log`` option::
+ 
+-It also scans the 'level.dat' file and the player '\*.dat' and tries to 
+-read them. If there are any problems it prints warnings. At the moment
+-it doesn't fix any problem in these files.
++    python regionfixer.py --log problems.txt "/path/to/world"
+ 
+-Web page:
+-https://github.com/Fenixin/Minecraft-Region-Fixer
++Requirements
++============
+ 
+-Mincraft forums posts:
+-https://www.minecraftforum.net/forums/support/server-support-and/1903200-minecraft-region-fixer
+-https://www.minecraftforum.net/forums/mapping-and-modding-java-edition/minecraft-tools/1261480-minecraft-region-fixer
++Python 3 is required. No third-party Python packages are required for the
++command-line scanner included in this repository.
+ 
+-Supported platforms
++Windows quick start
+ ===================
+-This program only works with Python 3.x, and DOESN'T work with
+-python 2.x. There was a Windows .exe for older versions, but right
+-now you need to install the python interpreter to run this
+-program.
+ 
+-Notes
+-=====
+-Older versions of Minecraft had big problems when loading broken
+-worlds. Newer versions of Minecraft are improving the way
+-they deal with corruption and other things.
++The easiest Windows method is to drag a Minecraft world folder onto
++``RegionFixer.bat``. The launcher simply finds Python 3 and forwards the world
++path and any additional arguments to the original ``regionfixer.py`` command.
+ 
+-Region-Fixer still is useful for replacing chunks/regions with a 
+-backup, removing entities, or trying to see what's going wrong
+-with your world.
++You can also open Terminal/PowerShell in this folder and run::
+ 
++    python .\regionfixer.py "C:\path\to\world"
+ 
+-Usage
+-=====
+-You can read the program help running: "python regionfixer.py --help"
++or, on systems with the Python Launcher::
+ 
+-For usage examples and more info visit the wiki:
++    py -3 .\regionfixer.py "C:\path\to\world"
+ 
+-https://github.com/Fenixin/Minecraft-Region-Fixer/wiki/Usage
++Command-line usage
++==================
+ 
++The command-line interface intentionally remains compatible with Region Fixer.
++Read the complete built-in help with::
+ 
+-Bugs, suggestions, feedback, questions
+-======================================
+-Suggestions and bugs should go to the github page:
++    python regionfixer.py --help
+ 
+-https://github.com/Fenixin/Minecraft-Region-Fixer
++Show the fork version with::
+ 
+-Feedback and questions should preferably go to these forums posts:
++    python regionfixer.py --version
+ 
+-(server administration)
+-https://www.minecraftforum.net/forums/support/server-support-and/1903200-minecraft-region-fixer
++A normal scan is non-destructive::
+ 
+-(mapping and modding)
+-https://www.minecraftforum.net/forums/mapping-and-modding-java-edition/minecraft-tools/1261480-minecraft-region-fixer
++    python regionfixer.py "/path/to/world"
+ 
++Existing repair/delete/backup options continue to work. Review the scan output
++before using options that modify a world.
+ 
+-Donations and sponsors
+-======================
+-Region-Fixer was created thanks to sponsors and donations. You can find
+-information about that in DONORS.txt
++Testing
++=======
+ 
++Run the complete compatibility suite with::
+ 
+-Contributors
+-============
+-See CONTRIBUTORS.txt
++    python -m unittest discover -s tests -v
++
++The GitHub Actions workflow runs the same test suite on Windows and Linux using
++multiple Python versions.
+ 
++Release policy
++==============
++
++Changes to region parsing, chunk classification, world discovery, replacement,
++or deletion should include a regression test. New-format support should not
++remove an older format merely because Minecraft no longer writes it.
++
++See ``CHANGELOG.md``, ``MODERN_WORLD_COMPATIBILITY.md``, and
++``RELEASE_CHECKLIST.md`` for the current fork changes and release checks.
++
++License and attribution
++=======================
++
++Minecraft Region Fixer is free software distributed under the GNU General
++Public License, version 3 or later. See ``COPYING.txt``.
++
++The original Region Fixer code and copyright notices remain attributed to
++Alejandro Aguilera (Fenixin) and the original contributors. This repository is
++an unofficial compatibility fork and is not affiliated with Mojang or
++Microsoft. See ``FORK_NOTICE.md`` for details.
+ 
+ Warning
+ =======
+-This program has been tested with a lot of worlds, but there may exist 
+-bugs, so please, MAKE A BACKUP OF YOUR WORLD BEFORE RUNNING it,
+-I'M NOT RESPONSIBLE OF WHAT HAPPENS TO YOUR WORLD. Other way to say it 
+-is USE THIS TOOL AT YOUR OWN RISK.
+-
+-Think that you are playing with your precious saved games :P .
+ 
+-Good luck! :)
++Region Fixer can delete or replace chunks and region files when destructive
++options are explicitly selected. Always keep a separate untouched backup of a
++world before attempting repairs.
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/RELEASE_CHECKLIST.md /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/RELEASE_CHECKLIST.md
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/RELEASE_CHECKLIST.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/RELEASE_CHECKLIST.md	2026-08-25 18:13:50.296731843 +0000
+@@ -0,0 +1,20 @@
++# Release checklist
++
++Use this before publishing a tagged release.
++
++1. Run `python -m unittest discover -s tests -v`.
++2. Run `python -m compileall -q regionfixer.py regionfixer_core nbt mutf8 progressbar tests`.
++3. Verify `python regionfixer.py --help` and `python regionfixer.py --version`.
++4. Scan an untouched copy of at least one legacy-layout world.
++5. Scan an untouched copy of at least one current namespaced-dimension world.
++6. Confirm the detailed summary is readable for both a clean world and a world
++   with known problems.
++7. Test backup replacement only on disposable copies, including a cross-layout
++   backup if available.
++8. Confirm the release still contains `COPYING.txt`, `CONTRIBUTORS.txt`, and
++   `FORK_NOTICE.md`.
++9. Review the destructive-operation warning in the README before publishing.
++10. Tag the release with the same version reported by `regionfixer.py --version`.
++
++Do not claim a Minecraft version is supported solely because a directory can be
++found. Real-world scan and repair testing should accompany format changes.
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/RegionFixer.bat /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/RegionFixer.bat
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/RegionFixer.bat	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/RegionFixer.bat	2026-08-25 17:59:16.000000000 +0000
+@@ -0,0 +1,38 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++
++if "%~1"=="" goto no_args
++
++where py >nul 2>&1
++if %errorlevel%==0 (
++    py -3 "%~dp0regionfixer.py" %*
++    exit /b %errorlevel%
++)
++
++where python >nul 2>&1
++if %errorlevel%==0 (
++    python "%~dp0regionfixer.py" %*
++    exit /b %errorlevel%
++)
++
++echo.
++echo ERROR: Python 3 was not found.
++echo Install Python 3, then try again.
++echo.
++pause
++exit /b 1
++
++:no_args
++echo.
++echo Minecraft Region Fixer Modern
++echo.
++echo Drag a Minecraft world folder onto RegionFixer.bat to scan it.
++echo.
++echo Or run from Terminal, for example:
++echo   RegionFixer.bat "C:\path\to\world"
++echo.
++echo This launcher forwards all arguments to regionfixer.py.
++echo.
++pause
++exit /b 0
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/nbt/lz4_java.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/nbt/lz4_java.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/nbt/lz4_java.py	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/nbt/lz4_java.py	2026-08-25 18:02:32.000000000 +0000
+@@ -0,0 +1,206 @@
++"""Decode the LZ4Block stream used by Minecraft region compression type 4.
++
++Minecraft uses the block stream format from lz4-java's LZ4BlockInputStream,
++not the standard LZ4 frame format.  Keeping the decoder here avoids adding a
++runtime dependency just to scan a world that happens to use LZ4 regions.
++"""
++
++from struct import unpack
++
++MAGIC = b"LZ4Block"
++HEADER_LENGTH = 21
++METHOD_RAW = 0x10
++METHOD_LZ4 = 0x20
++XXHASH_SEED = 0x9747B28C
++CHECKSUM_MASK = 0xFFFFFFFF
++
++_P1 = 0x9E3779B1
++_P2 = 0x85EBCA77
++_P3 = 0xC2B2AE3D
++_P4 = 0x27D4EB2F
++_P5 = 0x165667B1
++_MASK32 = 0xFFFFFFFF
++
++
++def _rotl32(value, count):
++    value &= _MASK32
++    return ((value << count) | (value >> (32 - count))) & _MASK32
++
++
++def _round(acc, lane):
++    acc = (acc + (lane * _P2)) & _MASK32
++    acc = _rotl32(acc, 13)
++    return (acc * _P1) & _MASK32
++
++
++def xxhash32(data, seed=0):
++    """Small pure-Python XXH32 implementation for lz4-java checksums."""
++    data = bytes(data)
++    length = len(data)
++    index = 0
++    seed &= _MASK32
++
++    if length >= 16:
++        v1 = (seed + _P1 + _P2) & _MASK32
++        v2 = (seed + _P2) & _MASK32
++        v3 = seed
++        v4 = (seed - _P1) & _MASK32
++        limit = length - 16
++        while index <= limit:
++            v1 = _round(v1, unpack("<I", data[index:index + 4])[0]); index += 4
++            v2 = _round(v2, unpack("<I", data[index:index + 4])[0]); index += 4
++            v3 = _round(v3, unpack("<I", data[index:index + 4])[0]); index += 4
++            v4 = _round(v4, unpack("<I", data[index:index + 4])[0]); index += 4
++        result = (_rotl32(v1, 1) + _rotl32(v2, 7) +
++                  _rotl32(v3, 12) + _rotl32(v4, 18)) & _MASK32
++    else:
++        result = (seed + _P5) & _MASK32
++
++    result = (result + length) & _MASK32
++
++    while index + 4 <= length:
++        lane = unpack("<I", data[index:index + 4])[0]
++        result = (result + lane * _P3) & _MASK32
++        result = (_rotl32(result, 17) * _P4) & _MASK32
++        index += 4
++
++    while index < length:
++        result = (result + data[index] * _P5) & _MASK32
++        result = (_rotl32(result, 11) * _P1) & _MASK32
++        index += 1
++
++    result ^= result >> 15
++    result = (result * _P2) & _MASK32
++    result ^= result >> 13
++    result = (result * _P3) & _MASK32
++    result ^= result >> 16
++    return result & _MASK32
++
++
++def _decompress_raw_lz4(block, expected_size):
++    """Decompress one raw LZ4 block (no frame header)."""
++    source = memoryview(block)
++    source_index = 0
++    output = bytearray()
++
++    while source_index < len(source):
++        token = source[source_index]
++        source_index += 1
++
++        literal_length = token >> 4
++        if literal_length == 15:
++            while True:
++                if source_index >= len(source):
++                    raise ValueError("Truncated LZ4 literal length")
++                value = source[source_index]
++                source_index += 1
++                literal_length += value
++                if value != 255:
++                    break
++
++        literal_end = source_index + literal_length
++        if literal_end > len(source):
++            raise ValueError("Truncated LZ4 literals")
++        output.extend(source[source_index:literal_end])
++        source_index = literal_end
++
++        # A final literal-only sequence has no match offset.
++        if source_index == len(source):
++            break
++        if source_index + 2 > len(source):
++            raise ValueError("Truncated LZ4 match offset")
++
++        offset = source[source_index] | (source[source_index + 1] << 8)
++        source_index += 2
++        if offset == 0 or offset > len(output):
++            raise ValueError("Invalid LZ4 match offset %d" % offset)
++
++        match_length = token & 0x0F
++        if match_length == 15:
++            while True:
++                if source_index >= len(source):
++                    raise ValueError("Truncated LZ4 match length")
++                value = source[source_index]
++                source_index += 1
++                match_length += value
++                if value != 255:
++                    break
++        match_length += 4
++
++        # Copy in chunks so overlapping matches work without a byte-at-a-time
++        # loop in the common case.
++        while match_length:
++            copy_length = min(match_length, offset)
++            start = len(output) - offset
++            output.extend(output[start:start + copy_length])
++            match_length -= copy_length
++
++        if len(output) > expected_size:
++            raise ValueError("LZ4 block expanded beyond declared size")
++
++    if len(output) != expected_size:
++        raise ValueError("LZ4 block size mismatch: expected %d, got %d" %
++                         (expected_size, len(output)))
++    return bytes(output)
++
++
++def decompress(data):
++    """Decode a complete lz4-java LZ4Block stream."""
++    data = bytes(data)
++    index = 0
++    result = bytearray()
++    saw_terminal = False
++
++    while index < len(data):
++        if index + HEADER_LENGTH > len(data):
++            raise ValueError("Truncated LZ4Block header")
++        header = data[index:index + HEADER_LENGTH]
++        index += HEADER_LENGTH
++
++        if header[:8] != MAGIC:
++            raise ValueError("Invalid LZ4Block magic")
++
++        token = header[8]
++        method = token & 0xF0
++        compression_level = token & 0x0F
++        compressed_length, decompressed_length, checksum = unpack("<III", header[9:21])
++
++        if compressed_length == 0 and decompressed_length == 0:
++            if checksum != 0:
++                raise ValueError("Invalid LZ4Block terminal checksum")
++            saw_terminal = True
++            break
++
++        max_block_size = 1 << (10 + compression_level)
++        if decompressed_length <= 0 or decompressed_length > max_block_size:
++            raise ValueError("Invalid LZ4Block decompressed size %d" % decompressed_length)
++        if index + compressed_length > len(data):
++            raise ValueError("Truncated LZ4Block payload")
++
++        payload = data[index:index + compressed_length]
++        index += compressed_length
++
++        if method == METHOD_RAW:
++            if compressed_length != decompressed_length:
++                raise ValueError("Invalid raw LZ4Block lengths")
++            block = payload
++        elif method == METHOD_LZ4:
++            block = _decompress_raw_lz4(payload, decompressed_length)
++        else:
++            raise ValueError("Unknown LZ4Block method 0x%02x" % method)
++
++        calculated = xxhash32(block, XXHASH_SEED) & CHECKSUM_MASK
++        if calculated != checksum:
++            raise ValueError("LZ4Block checksum mismatch")
++        result.extend(block)
++
++    if not saw_terminal:
++        raise ValueError("LZ4Block stream has no terminal block")
++    if index != len(data):
++        # lz4-java streams should finish exactly at the terminal marker. Treat
++        # non-empty trailing bytes as corruption rather than silently ignoring.
++        trailing = data[index:]
++        if any(trailing):
++            raise ValueError("Unexpected data after LZ4Block terminal block")
++
++    return bytes(result)
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/nbt/region.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/nbt/region.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/nbt/region.py	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/nbt/region.py	2026-08-25 17:59:44.000000000 +0000
+@@ -16,6 +16,10 @@
+ from io import BytesIO
+ import time
+ from os import SEEK_END
++import os
++import re
++
++from . import lz4_java
+ 
+ # constants
+ 
+@@ -47,12 +51,18 @@
+ STATUS_CHUNK_NOT_CREATED = 1
+ """Constant indicating an normal status: the chunk does not exist"""
+ 
+-COMPRESSION_NONE = 0
+-"""Constant indicating that the chunk is not compressed."""
++COMPRESSION_NONE_LEGACY = 0
++"""Legacy nbt-library value for uncompressed chunks (accepted for compatibility)."""
+ COMPRESSION_GZIP = 1
+ """Constant indicating that the chunk is GZip compressed."""
+ COMPRESSION_ZLIB = 2
+ """Constant indicating that the chunk is zlib compressed."""
++COMPRESSION_NONE = 3
++"""Minecraft region compression id 3: uncompressed NBT data."""
++COMPRESSION_LZ4 = 4
++"""Minecraft region compression id 4: lz4-java LZ4Block stream."""
++EXTERNAL_CHUNK_FLAG = 0x80
++"""High bit indicating that the compressed payload is stored in c.<x>.<z>.mcc."""
+ 
+ 
+ # TODO: reconsider these errors. where are they catched? Where would an implementation make a difference in handling the different exceptions.
+@@ -105,11 +115,14 @@
+         """length of the block in bytes. This excludes the 4-byte length header,
+         and includes the 1-byte compression byte. (32 bit int)"""
+         self.compression = None
+-        """type of compression used for the chunk block. (8 bit int).
+-    
+-        - 0: uncompressed
++        """type of compression used for the chunk block. (low 7 bits).
++
+         - 1: gzip compression
+-        - 2: zlib compression"""
++        - 2: zlib compression
++        - 3: uncompressed
++        - 4: lz4-java LZ4Block compression"""
++        self.external = False
++        """True when the payload is stored in a sibling c.<x>.<z>.mcc file."""
+         self.status = STATUS_CHUNK_NOT_CREATED
+         """status as determined from blockstart, blocklength, length, file size
+         and location of other chunks in the file.
+@@ -374,14 +387,17 @@
+                     self.file.seek(m.blockstart*SECTOR_LENGTH) # offset comes in sectors of 4096 bytes
+                     length = unpack(">I", self.file.read(4))
+                     m.length = length[0] # unpack always returns a tuple, even unpacking one element
+-                    compression = unpack(">B",self.file.read(1))
+-                    m.compression = compression[0]
+-                except IOError:
++                    compression = unpack(">B", self.file.read(1))[0]
++                    m.external = bool(compression & EXTERNAL_CHUNK_FLAG)
++                    m.compression = compression & ~EXTERNAL_CHUNK_FLAG
++                except (IOError, EOFError):
+                     m.status = STATUS_CHUNK_OUT_OF_FILE
+                     continue
+                 if m.blockstart*SECTOR_LENGTH + m.length + 4 > self.size:
+                     m.status = STATUS_CHUNK_OUT_OF_FILE
+-                elif m.length <= 1: # chunk can't be zero length
++                elif m.length < 1 or (m.length == 1 and not m.external):
++                    # External chunks legitimately have a one-byte body: only
++                    # the compression byte lives in the .mca file.
+                     m.status = STATUS_CHUNK_ZERO_LENGTH
+                 elif m.length + 4 > m.blocklength * SECTOR_LENGTH:
+                     # There are not enough sectors allocated for the whole block
+@@ -520,6 +536,39 @@
+         """Return the number of defined chunks. This includes potentially corrupt chunks."""
+         return len(self.get_metadata())
+ 
++    def _region_coords_from_filename(self):
++        """Return (region_x, region_z) parsed from r.<x>.<z>.mca."""
++        if not self.filename:
++            raise ChunkDataError("External chunk storage requires a named region file")
++        match = re.match(r"^r\.(-?\d+)\.(-?\d+)\.mca$", os.path.basename(self.filename))
++        if not match:
++            raise ChunkDataError("Can't determine region coordinates from %s" % self.filename)
++        return int(match.group(1)), int(match.group(2))
++
++    def _external_chunk_path(self, x, z):
++        region_x, region_z = self._region_coords_from_filename()
++        global_x = region_x * 32 + x
++        global_z = region_z * 32 + z
++        return os.path.join(os.path.dirname(self.filename),
++                            "c.%d.%d.mcc" % (global_x, global_z))
++
++    @staticmethod
++    def _decompress_payload(chunk, compression):
++        if compression == COMPRESSION_GZIP:
++            # Python 3.1 and earlier do not yet support gzip.decompress(chunk)
++            f = gzip.GzipFile(fileobj=BytesIO(chunk))
++            try:
++                return bytes(f.read())
++            finally:
++                f.close()
++        elif compression == COMPRESSION_ZLIB:
++            return zlib.decompress(chunk)
++        elif compression in (COMPRESSION_NONE, COMPRESSION_NONE_LEGACY):
++            return chunk
++        elif compression == COMPRESSION_LZ4:
++            return lz4_java.decompress(chunk)
++        raise ChunkDataError('Unknown chunk compression/format (%s)' % compression)
++
+     def get_blockdata(self, x, z):
+         """
+         Return the decompressed binary data representing a chunk.
+@@ -553,24 +602,21 @@
+ 
+         err = None
+         try:
+-            # offset comes in sectors of 4096 bytes + length bytes + compression byte
+-            self.file.seek(m.blockstart * SECTOR_LENGTH + 5)
+-            # Do not read past the length of the file.
+-            # The length in the file includes the compression byte, hence the -1.
+-            length = min(m.length - 1, self.size - (m.blockstart * SECTOR_LENGTH + 5))
+-            chunk = self.file.read(length)
+-            
+-            if (m.compression == COMPRESSION_GZIP):
+-                # Python 3.1 and earlier do not yet support gzip.decompress(chunk)
+-                f = gzip.GzipFile(fileobj=BytesIO(chunk))
+-                chunk = bytes(f.read())
+-                f.close()
+-            elif (m.compression == COMPRESSION_ZLIB):
+-                chunk = zlib.decompress(chunk)
+-            elif m.compression != COMPRESSION_NONE:
+-                raise ChunkDataError('Unknown chunk compression/format (%s)' % m.compression)
+-            
+-            return chunk
++            if m.external:
++                external_path = self._external_chunk_path(x, z)
++                if not os.path.isfile(external_path):
++                    raise ChunkDataError("External chunk payload is missing: %s" % external_path)
++                with open(external_path, "rb") as external_file:
++                    chunk = external_file.read()
++            else:
++                # offset comes in sectors of 4096 bytes + length bytes + compression byte
++                self.file.seek(m.blockstart * SECTOR_LENGTH + 5)
++                # Do not read past the length of the file. The length in the
++                # file includes the compression byte, hence the -1.
++                length = min(m.length - 1, self.size - (m.blockstart * SECTOR_LENGTH + 5))
++                chunk = self.file.read(length)
++
++            return self._decompress_payload(chunk, m.compression)
+         except RegionFileFormatError:
+             raise
+         except Exception as e:
+@@ -622,98 +668,115 @@
+         return self.get_nbt(x, z)
+ 
+     def write_blockdata(self, x, z, data, compression=COMPRESSION_ZLIB):
+-        """
+-        Compress the data, write it to file, and add pointers in the header so it 
+-        can be found as chunk(x,z).
+-        """
++        """Compress and write a chunk, using external .mcc storage if needed."""
+         if compression == COMPRESSION_GZIP:
+-            # Python 3.1 and earlier do not yet support `data = gzip.compress(data)`.
+             compressed_file = BytesIO()
+-            f = gzip.GzipFile(fileobj=compressed_file)
++            f = gzip.GzipFile(fileobj=compressed_file, mode="wb")
+             f.write(data)
+             f.close()
+             compressed_file.seek(0)
+             data = compressed_file.read()
+-            del compressed_file
+         elif compression == COMPRESSION_ZLIB:
+-            data = zlib.compress(data) # use zlib compression, rather than Gzip
+-        elif compression != COMPRESSION_NONE:
++            data = zlib.compress(data)
++        elif compression in (COMPRESSION_NONE, COMPRESSION_NONE_LEGACY):
++            pass
++        elif compression == COMPRESSION_LZ4:
++            # Region Fixer writes repaired chunks as zlib by default. Reading
++            # LZ4 is supported, but producing lz4-java streams is intentionally
++            # not required for repairs.
++            raise ValueError("Writing LZ4 region chunks is not supported; use zlib")
++        else:
+             raise ValueError("Unknown compression type %d" % compression)
+-        length = len(data)
+ 
+-        # 5 extra bytes are required for the chunk block header
+-        nsectors = self._bytes_to_sector(length + 5)
++        length = len(data)
++        requested_sectors = self._bytes_to_sector(length + 5)
++        external = requested_sectors >= 256
++        nsectors = 1 if external else requested_sectors
+ 
+-        if nsectors >= 256:
+-            raise ChunkDataError("Chunk is too large (%d sectors exceeds 255 maximum)" % (nsectors))
++        # Determine the sidecar path before modifying the region file.
++        external_path = self._external_chunk_path(x, z) if external else None
+ 
+         # Ensure file has a header
+         if self.size < 2*SECTOR_LENGTH:
+             self._init_file()
+ 
+-        # search for a place where to write the chunk:
+         current = self.metadata[x, z]
++        old_external_path = None
++        if current.external:
++            try:
++                old_external_path = self._external_chunk_path(x, z)
++            except ChunkDataError:
++                pass
++
+         free_sectors = self._locate_free_sectors(ignore_chunk=current)
+         sector = self._find_free_location(free_sectors, nsectors, preferred=current.blockstart)
+ 
+-        # If file is smaller than sector*SECTOR_LENGTH (it was truncated), pad it with zeroes.
+         if self.size < sector*SECTOR_LENGTH:
+-            # jump to end of file
+             self.file.seek(0, SEEK_END)
+             self.file.write((sector*SECTOR_LENGTH - self.size) * b"\x00")
+             assert self.file.tell() == sector*SECTOR_LENGTH
+ 
+-        # write out chunk to region
++        # For oversized chunks Minecraft stores only a flagged compression byte
++        # in the region and puts the compressed payload in c.<x>.<z>.mcc.
++        if external:
++            temporary_path = external_path + ".tmp-regionfixer"
++            with open(temporary_path, "wb") as external_file:
++                external_file.write(data)
++                external_file.flush()
++                os.fsync(external_file.fileno())
++            os.replace(temporary_path, external_path)
++            stored_length = 1
++            stored_compression = compression | EXTERNAL_CHUNK_FLAG
++            payload = b""
++        else:
++            stored_length = length + 1
++            stored_compression = compression
++            payload = data
++
+         self.file.seek(sector*SECTOR_LENGTH)
+-        self.file.write(pack(">I", length + 1)) #length field
+-        self.file.write(pack(">B", compression)) #compression field
+-        self.file.write(data) #compressed data
++        self.file.write(pack(">I", stored_length))
++        self.file.write(pack(">B", stored_compression))
++        self.file.write(payload)
+ 
+-        # Write zeros up to the end of the chunk
+-        remaining_length = SECTOR_LENGTH * nsectors - length - 5
++        remaining_length = SECTOR_LENGTH * nsectors - len(payload) - 5
+         self.file.write(remaining_length * b"\x00")
+ 
+-        #seek to header record and write offset and length records
+         self.file.seek(4 * (x + 32*z))
+         self.file.write(pack(">IB", sector, nsectors)[1:])
+ 
+-        #write timestamp
+         self.file.seek(SECTOR_LENGTH + 4 * (x + 32*z))
+         timestamp = int(time.time())
+         self.file.write(pack(">I", timestamp))
+ 
+-        # Update free_sectors with newly written block
+-        # This is required for calculating file truncation and zeroing freed blocks.
+         free_sectors.extend((sector + nsectors - len(free_sectors)) * [True])
+         for s in range(sector, sector + nsectors):
+             free_sectors[s] = False
+-        
+-        # Check if file should be truncated:
++
+         truncate_count = list(reversed(free_sectors)).index(False)
+         if truncate_count > 0:
+             self.size = SECTOR_LENGTH * (len(free_sectors) - truncate_count)
+             self.file.truncate(self.size)
+             free_sectors = free_sectors[:-truncate_count]
+-        
+-        # Calculate freed sectors
++
+         for s in range(current.blockstart, min(current.blockstart + current.blocklength, len(free_sectors))):
+             if free_sectors[s]:
+-                # zero sector s
+                 self.file.seek(SECTOR_LENGTH*s)
+                 self.file.write(SECTOR_LENGTH*b'\x00')
+-        
+-        # update file size and header information
++
++        # If the old representation used a sidecar and the new one does not,
++        # remove the stale sidecar after the region write succeeds.
++        if old_external_path and not external and os.path.exists(old_external_path):
++            os.remove(old_external_path)
++
+         self.size = max((sector + nsectors)*SECTOR_LENGTH, self.size)
+         assert self.get_size() == self.size
+         current.blockstart = sector
+         current.blocklength = nsectors
+         current.status = STATUS_CHUNK_OK
+         current.timestamp = timestamp
+-        current.length = length + 1
+-        current.compression = COMPRESSION_ZLIB
+-
+-        # self.parse_header()
+-        # self.parse_chunk_headers()
++        current.length = stored_length
++        current.compression = compression
++        current.external = external
+ 
+     def write_chunk(self, x, z, nbt_file):
+         """
+@@ -740,6 +803,13 @@
+ 
+         # Check if file should be truncated:
+         current = self.metadata[x, z]
++        if current.external:
++            try:
++                external_path = self._external_chunk_path(x, z)
++                if os.path.exists(external_path):
++                    os.remove(external_path)
++            except ChunkDataError:
++                pass
+         free_sectors = self._locate_free_sectors(ignore_chunk=current)
+         truncate_count = list(reversed(free_sectors)).index(False)
+         if truncate_count > 0:
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer.py	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer.py	2026-08-25 17:58:07.000000000 +0000
+@@ -160,6 +160,10 @@
+                                      usage=usage,
+                                      epilog=epilog)
+ 
++    parser.add_argument('--version',
++                        action='version',
++                        version='%(prog)s {0}'.format(version_string))
++
+     parser.add_argument('--text-file-input',
+                         '--tf',
+                         help=('Path to a text file with a list of world folders and region '
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/constants.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/constants.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/constants.py	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/constants.py	2026-08-24 08:37:37.000000000 +0000
+@@ -234,7 +234,10 @@
+ # Dimension names:
+ DIMENSION_NAMES = {"": "Overworld",
+                    "DIM1": "The End",
+-                   "DIM-1": "Nether"
++                   "DIM-1": "Nether",
++                   "minecraft/overworld": "Overworld",
++                   "minecraft/the_end": "The End",
++                   "minecraft/the_nether": "Nether"
+                    }
+ 
+ # Region files types
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/scan.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/scan.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/scan.py	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/scan.py	2026-08-25 18:11:28.806890495 +0000
+@@ -732,20 +732,19 @@
+     If something is wrong it will return a tuple with useful info
+     to debug the problem.
+ 
+-    NOTE: idcounts.dat (number of map files) is a nbt file and
+-    is not compressed, we handle the  special case here.
++    NOTE: idcounts.dat (legacy map id counter) is uncompressed NBT.
++    Modern Minecraft uses last_id.dat; that file keeps the same
++    special handling.
+ 
+     """
+ 
+     s = scanned_dat_file
+     try:
+-        if s.filename == 'idcounts.dat':
+-            # TODO: This is ugly
+-            # Open the file and create a buffer, this way
+-            # NBT won't try to de-gzip the file
+-            f = open(s.path)
+-
+-            _ = nbt.NBTFile(buffer=f)
++        if s.filename in ('idcounts.dat', 'last_id.dat'):
++            # These map-id counter files are raw/uncompressed NBT. Open them
++            # in binary mode and pass a buffer so NBTFile does not try gzip.
++            with open(s.path, 'rb') as f:
++                _ = nbt.NBTFile(buffer=f)
+         else:
+             _ = nbt.NBTFile(filename=s.path)
+         s.status = c.DATAFILE_OK
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/version.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/version.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/version.py	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/version.py	2026-08-25 17:58:07.000000000 +0000
+@@ -21,5 +21,5 @@
+ #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #
+ 
+-version_string = "0.3.7"
++version_string = "0.4.0"
+ version_numbers = version_string.split('.')
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/world.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/world.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/regionfixer_core/world.py	2026-03-22 20:30:52.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/regionfixer_core/world.py	2026-08-25 18:15:41.507836143 +0000
+@@ -24,18 +24,57 @@
+ from glob import glob
+ from os.path import join, split, exists, isfile
+ from os import remove
++import os
+ from shutil import copy
+ import zlib
+ import sys
+ 
+ import nbt.region as region
+ import nbt.nbt as nbt
+-from .util import table
+ from nbt.nbt import TAG_List
+ 
+ import regionfixer_core.constants as c
+ 
+ 
++def _summary_table(headers, rows):
++    """Return a simple left-aligned ASCII table suitable for terminals/logs."""
++    rows = [list(map(str, row)) for row in rows]
++    headers = list(map(str, headers))
++    all_rows = [headers] + rows
++    widths = [max(len(row[i]) for row in all_rows) for i in range(len(headers))]
++
++    def render(row):
++        return "  ".join(value.ljust(widths[i]) for i, value in enumerate(row)).rstrip()
++
++    text = render(headers) + "\n"
++    text += render(["-" * width for width in widths]) + "\n"
++    for row in rows:
++        text += render(row) + "\n"
++    return text.rstrip()
++
++
++def _summary_kv(rows):
++    """Return aligned key/value rows."""
++    if not rows:
++        return ""
++    width = max(len(str(key)) for key, _value in rows)
++    return "\n".join("  {0:<{1}}  {2}".format(key, width, value) for key, value in rows)
++
++
++def _problem_total(counts, problems):
++    return sum(counts.get(status, 0) for status in problems)
++
++
++def _fmt_count(value):
++    """Format integer counts for large-world terminal summaries."""
++    return "{0:,}".format(int(value))
++
++
++def _plural(value, singular, plural=None):
++    plural = plural if plural is not None else singular + "s"
++    return singular if value == 1 else plural
++
++
+ 
+ class InvalidFileName(IOError):
+     """ Exception raised when a filename is wrong. """
+@@ -614,13 +653,20 @@
+      - title -- Some user readable string to represent the DataSet
+     """
+ 
+-    def __init__(self, path, title, *args, **kwargs):
++    def __init__(self, path, title, recursive=False, *args, **kwargs):
+         DataSet.__init__(self, ScannedDataFile, *args, **kwargs)
+         d = self._set
+ 
+         self.title = title
+         self.path = path
+-        data_files_path = glob(join(path, "*.dat"))
++        if recursive and exists(path):
++            data_files_path = []
++            for root, _directories, filenames in os.walk(path):
++                for filename in filenames:
++                    if filename.endswith(".dat"):
++                        data_files_path.append(join(root, filename))
++        else:
++            data_files_path = glob(join(path, "*.dat"))
+ 
+         for path in data_files_path:
+             d[path] = ScannedDataFile(path)
+@@ -646,8 +692,11 @@
+         assert isinstance(s, self._typevalue)
+         self._counts[s.status] += 1
+ 
+-    def count_datafiles(self, status):
+-        pass
++    def count_datafiles(self, status=None):
++        """Count data files, optionally limited to a scan status."""
++        if status is None:
++            return len(self._set)
++        return sum(1 for item in self._set.values() if item.status == status)
+ 
+     def summary(self):
+         """ Return a summary of problems found in this set. """
+@@ -730,22 +779,43 @@
+             return ""
+ 
+     def _get_dimension_directory(self):
+-        """ Returns a string with the parent directory containing the RegionSet.
+-        
+-        If there is no such a directory returns None. If it's composed
+-        of sparse region files returns 'regionset'.
+-    
++        """Return a canonical dimension id for this RegionSet.
++
++        Modern Minecraft stores dimensions under
++        ``dimensions/<namespace>/<dimension>/``.  Older worlds instead store
++        the Overworld at the world root and the vanilla Nether/End in DIM-1
++        and DIM1.  Normalising both layouts lets modern and legacy worlds use backups
++        across the storage-layout migration.
+         """
+ 
+-        if self.path:
+-            if self.overworld :
+-                return ""
+-            rest, type_dir = split(self.path)
+-            rest, dim_path = split(rest)
+-            return dim_path
+-        else:
++        if not self.path:
+             return None
+ 
++        normal_path = os.path.normpath(self.path)
++        dimension_root = os.path.dirname(normal_path)
++        parts = dimension_root.split(os.sep)
++
++        # Modern namespaced-dimension layout. Use the last "dimensions" component in
++        # case a parent directory happens to have the same name.
++        dimensions_indexes = [i for i, part in enumerate(parts) if part == "dimensions"]
++        if dimensions_indexes:
++            index = dimensions_indexes[-1]
++            dimension_parts = parts[index + 1:]
++            if dimension_parts:
++                return "/".join(dimension_parts)
++
++        # Legacy vanilla layout. Canonical names match the modern resource
++        # locations so backup replacement works across the storage migration.
++        if self.overworld:
++            return "minecraft/overworld"
++
++        legacy_name = os.path.basename(dimension_root)
++        legacy_dimensions = {
++            "DIM-1": "minecraft/the_nether",
++            "DIM1": "minecraft/the_end",
++        }
++        return legacy_dimensions.get(legacy_name, legacy_name)
++
+     def _get_region_type_directory(self):
+         """ Returns a string with the directory containing the RegionSet.
+         
+@@ -1014,75 +1084,66 @@
+             self[r].rescan_entities(options)
+ 
+     def generate_report(self, standalone):
+-        """ Generates a report with the results of the scan.
+-        
+-        Inputs:
+-         - standalone -- If true the report will be a human readable String. If false the 
+-                         report will be a dictionary with all the counts of chunks and regions.
+-        
+-        Return if standalone = True:
+-         - text -- A human readable string of text with the results of the scan.
+-         
+-        Return if standlone = False:
+-         - chunk_counts -- Dictionary with all the counts of chunks for all the statuses. To read
+-                           it use the CHUNK_* constants. 
+-         - region_counts -- Dictionary with all the counts of region files for all the statuses. To read
+-                            it use the REGION_* constants.
++        """Generate scan counts or a detailed human-readable summary.
+ 
++        The non-standalone return value remains compatible with the original
++        Region Fixer API: ``(chunk_counts, region_counts)``.
+         """
+-
+-        # collect chunk data
+-        chunk_counts = {}
+-        has_chunk_problems = False
+-        for p in c.CHUNK_PROBLEMS:
+-            chunk_counts[p] = self.count_chunks(p)
+-            if chunk_counts[p] != 0:
+-                has_chunk_problems = True
++        chunk_counts = {status: self.count_chunks(status) for status in c.CHUNK_STATUSES}
+         chunk_counts['TOTAL'] = self.count_chunks()
+-
+-        # collect region data
+-        region_counts = {}
+-        has_region_problems = False
+-        for p in c.REGION_PROBLEMS:
+-            region_counts[p] = self.count_regions(p)
+-            if region_counts[p] != 0:
+-                has_region_problems = True
++        region_counts = {status: self.count_regions(status) for status in c.REGION_STATUSES}
+         region_counts['TOTAL'] = self.count_regions()
+ 
+-        # create a text string with a report of all found
+-        if standalone:
+-            text = ""
+-
+-            # add all chunk info in a table format
+-            text += "\nChunk problems:\n"
+-            if has_chunk_problems:
+-                table_data = []
+-                table_data.append(['Problem', 'Count'])
+-                for p in c.CHUNK_PROBLEMS:
+-                    if chunk_counts[p] != 0:
+-                        table_data.append([c.CHUNK_STATUS_TEXT[p], chunk_counts[p]])
+-                table_data.append(['Total', chunk_counts['TOTAL']])
+-                text += table(table_data)
+-            else:
+-                text += "No problems found.\n"
+-
+-            # add all region information
+-            text += "\n\nRegion problems:\n"
+-            if has_region_problems:
+-                table_data = []
+-                table_data.append(['Problem', 'Count'])
+-                for p in c.REGION_PROBLEMS:
+-                    if region_counts[p] != 0:
+-                        table_data.append([c.REGION_STATUS_TEXT[p], region_counts[p]])
+-                table_data.append(['Total', region_counts['TOTAL']])
+-                text += table(table_data)
+-
+-            else:
+-                text += "No problems found."
+-
+-            return text
++        if not standalone:
++            legacy_chunk_counts = {status: chunk_counts[status] for status in c.CHUNK_PROBLEMS}
++            legacy_chunk_counts['TOTAL'] = chunk_counts['TOTAL']
++            legacy_region_counts = {status: region_counts[status] for status in c.REGION_PROBLEMS}
++            legacy_region_counts['TOTAL'] = region_counts['TOTAL']
++            return legacy_chunk_counts, legacy_region_counts
++
++        chunk_problem_total = _problem_total(chunk_counts, c.CHUNK_PROBLEMS)
++        region_problem_total = _problem_total(region_counts, c.REGION_PROBLEMS)
++        total_problems = chunk_problem_total + region_problem_total
++
++        lines = [
++            "=" * 72,
++            "SCAN SUMMARY - SELECTED REGION FILES",
++            "=" * 72,
++            _summary_kv([
++                ("Overall result", "CLEAN" if total_problems == 0 else "ISSUES FOUND"),
++                ("Region files scanned", _fmt_count(region_counts['TOTAL'])),
++                ("Chunks scanned", _fmt_count(chunk_counts['TOTAL'])),
++            ]),
++            "",
++            "CHUNK HEALTH",
++        ]
++        chunk_rows = [
++            ("OK", _fmt_count(chunk_counts.get(c.CHUNK_OK, 0))),
++            ("Problems", _fmt_count(chunk_problem_total)),
++        ]
++        for status in c.CHUNK_PROBLEMS:
++            chunk_rows.append((c.CHUNK_STATUS_TEXT[status], _fmt_count(chunk_counts.get(status, 0))))
++        lines.append(_summary_kv(chunk_rows))
++
++        lines.extend(["", "REGION FILE HEALTH"] )
++        region_rows = [
++            ("OK", _fmt_count(region_counts.get(c.REGION_OK, 0))),
++            ("Problems", _fmt_count(region_problem_total)),
++        ]
++        for status in c.REGION_PROBLEMS:
++            region_rows.append((c.REGION_STATUS_TEXT[status], _fmt_count(region_counts.get(status, 0))))
++        lines.append(_summary_kv(region_rows))
++
++        lines.extend(["", "RESULT"] )
++        if total_problems == 0:
++            lines.append("  CLEAN - No problems found. No chunk or region problems were detected.")
+         else:
+-            return chunk_counts, region_counts
++            lines.append("  ISSUES FOUND - {0} chunk {1} and {2} region {3}.".format(
++                _fmt_count(chunk_problem_total), _plural(chunk_problem_total, "problem"),
++                _fmt_count(region_problem_total), _plural(region_problem_total, "problem")))
++            lines.append("  Use --log <file> for exact problematic chunk/file locations.")
++        lines.append("=" * 72)
++        return "\n".join(lines)
+ 
+     def remove_problematic_regions(self, status):
+         """ Removes all the regions files with the given status. See the warning!
+@@ -1100,7 +1161,12 @@
+ 
+         counter = 0
+         for r in self.list_regions(status):
+-            remove(r.get_path())
++            region_path = r.get_path()
++            # Oversized chunks may live in sibling c.<x>.<z>.mcc files.
++            # Remove those sidecars with the region so they are not orphaned.
++            for external_path in _external_chunk_files_for_region(region_path):
++                remove(external_path)
++            remove(region_path)
+             counter += 1
+         return counter
+ 
+@@ -1118,20 +1184,38 @@
+     def __init__(self, world_path):
+         self.path = world_path
+ 
+-        # list with RegionSets
++        # List with RegionSets. Modern worlds can store dimensions under
++        # dimensions/<namespace>/<dimension>/{region,poi,entities}. Discover
++        # both that layout and the legacy root/DIM* layout. Only add folders
++        # that actually exist so an empty legacy placeholder cannot shadow the
++        # matching modern RegionSet when using backups.
+         self.regionsets = []
++        region_type_directories = (c.LEVEL_DIR, c.POI_DIR, c.ENTITIES_DIR)
++        discovered = []
+ 
+-        self.regionsets.append(RegionSet(join(self.path, "region")))
+-        for directory in glob(join(self.path, "DIM*/region")):
+-            self.regionsets.append(RegionSet(directory, overworld=False))
+-
+-        self.regionsets.append(RegionSet(join(self.path, "poi")))
+-        for directory in glob(join(self.path, "DIM*/poi")):
+-            self.regionsets.append(RegionSet(directory, overworld=False))
+-
+-        self.regionsets.append(RegionSet(join(self.path, "entities")))
+-        for directory in glob(join(self.path, "DIM*/entities")):
+-            self.regionsets.append(RegionSet(directory, overworld=False))
++        for region_type in region_type_directories:
++            legacy_overworld = join(self.path, region_type)
++            if os.path.isdir(legacy_overworld):
++                discovered.append((legacy_overworld, True))
++            for directory in glob(join(self.path, "DIM*", region_type)):
++                if os.path.isdir(directory):
++                    discovered.append((directory, False))
++
++        modern_dimensions = join(self.path, "dimensions")
++        if os.path.isdir(modern_dimensions):
++            for directory, child_directories, _filenames in os.walk(modern_dimensions):
++                if os.path.basename(directory) in region_type_directories:
++                    discovered.append((directory, False))
++                    # A region-data folder should not contain dimension folders.
++                    child_directories[:] = []
++
++        seen = set()
++        for directory, overworld in discovered:
++            normalized = os.path.normcase(os.path.abspath(directory))
++            if normalized in seen:
++                continue
++            seen.add(normalized)
++            self.regionsets.append(RegionSet(directory, overworld=overworld))
+ 
+         # level.dat
+         # Let's scan level.dat here so we can extract the world name
+@@ -1153,31 +1237,47 @@
+             self.scanned_level = ScannedDataFile(level_dat_path)
+             self.scanned_level.status = c.DATAFILE_UNREADABLE
+ 
+-        # Player files
++        # Player/data files. Modern worlds can store UUID player data under
++        # playerdata/ to players/data/ and made data/ files namespaced.
+         self.datafilesets = []
+-        PLAYERS_DIRECTORY = 'playerdata'
+-        OLD_PLAYERS_DIRECTORY = ' players'
+-        STRUCTURES_DIRECTORY = 'data'
++        modern_players_directory = join(self.path, 'players', 'data')
++        legacy_players_directory = join(self.path, 'playerdata')
++        players_directory = (modern_players_directory if exists(modern_players_directory)
++                             else legacy_players_directory)
+ 
+-        self.players = DataFileSet(join(self.path, PLAYERS_DIRECTORY),
++        self.players = DataFileSet(players_directory,
+                                    "\nPlayer UUID files:\n")
+         self.datafilesets.append(self.players)
+-        self.old_players = DataFileSet(join(self.path, OLD_PLAYERS_DIRECTORY),
++        # Very old (pre-UUID) player files lived directly in players/. On a
++        # modern world this directory may only contain subdirectories, so a
++        # non-recursive scan safely finds none here.
++        self.old_players = DataFileSet(join(self.path, 'players'),
+                                        "\nOld format player files:\n")
+         self.datafilesets.append(self.old_players)
+-        self.data_files = DataFileSet(join(self.path, STRUCTURES_DIRECTORY),
+-                                      "\nStructures and map data files:\n")
++        self.data_files = DataFileSet(join(self.path, 'data'),
++                                      "\nStructures and map data files:\n",
++                                      recursive=True)
++
++        # Modern worlds can also store dimension-specific NBT data in each
++        # dimension's data/<namespace>/ tree (for example the End dragon
++        # fight). Keep these files in the existing data_files DataFileSet so
++        # the scanner/reporting behavior stays exactly the same for callers.
++        if os.path.isdir(modern_dimensions):
++            for directory, _child_directories, filenames in os.walk(modern_dimensions):
++                if os.path.basename(directory) != 'data':
++                    continue
++                for data_root, _data_directories, data_filenames in os.walk(directory):
++                    for filename in data_filenames:
++                        if filename.endswith('.dat'):
++                            data_path = join(data_root, filename)
++                            self.data_files._set[data_path] = ScannedDataFile(data_path)
++
+         self.datafilesets.append(self.data_files)
+ 
+-        # Does it look like a world folder?
+-        region_files = False
+-        for region_directory in self.regionsets:
+-            if region_directory:
+-                region_files = True
+-        if region_files:
+-            self.isworld = True
+-        else:
+-            self.isworld = False
++        # level.dat is sufficient to identify a world even if all region files
++        # are currently missing/corrupt. This also avoids rejecting freshly
++        # modern worlds during discovery.
++        self.isworld = exists(level_dat_path) or any(len(r) for r in self.regionsets)
+         # TODO: Make a Exception for this! so we can use try/except
+ 
+         # Set in scan.py, used in interactive.py
+@@ -1358,24 +1458,25 @@
+ 
+         counter = 0
+         scanned_regions = {}
++        requested_status = status
+         for regionset in self.regionsets:
+             for backup in backup_worlds:
+-                # choose the correct regionset based on the dimension
+-                # folder name and the type name (region, POI and entities)
++                # choose the correct regionset based on the canonical dimension
++                # id and the type name (region, POI and entities)
++                b_regionset = None
+                 for temp_regionset in backup.regionsets:
+                     if ( temp_regionset._get_dimension_directory() == regionset._get_dimension_directory() and
+                          temp_regionset._get_region_type_directory() == regionset._get_region_type_directory()):
+                         b_regionset = temp_regionset
+                         break
+ 
+-                # this don't need to be aware of region status, it just
++                # this doesn't need to be aware of region status, it just
+                 # iterates the list returned by list_chunks()
+-                bad_chunks = regionset.list_chunks(status)
++                bad_chunks = regionset.list_chunks(requested_status)
+ 
+-                if ( bad_chunks and
+-                     b_regionset._get_dimension_directory() != regionset._get_dimension_directory() and
+-                     b_regionset._get_region_type_directory() != regionset._get_region_type_directory() ):
+-                    print("The regionset \'{0}\' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
++                if bad_chunks and b_regionset is None:
++                    print("The regionset '{0}' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
++                    continue
+                 else:
+                     for ck in bad_chunks:
+                         global_coords = ck[0]
+@@ -1392,13 +1493,16 @@
+                             # absolutely needed to detect sharing offset chunks
+                             # The backups world doesn't change, check if the
+                             # region_file is already scanned:
++                            # Region coordinates alone are not unique across
++                            # dimensions/types (every dimension can have an
++                            # r.0.0.mca). Cache by the actual backup path.
++                            cache_key = os.path.normcase(os.path.abspath(backup_region_path))
+                             try:
+-                                coords = get_region_coords(split(backup_region_path)[1])
+-                                r = scanned_regions[coords]
++                                r = scanned_regions[cache_key]
+                             except KeyError:
+                                 from .scan import scan_region_file
+                                 r = scan_region_file(ScannedRegionFile(backup_region_path), entity_limit, delete_entities)
+-                                scanned_regions[r.coords] = r
++                                scanned_regions[cache_key] = r
+                             try:
+                                 status_tuple = r[local_coords]
+                             except KeyError:
+@@ -1406,11 +1510,11 @@
+ 
+                             # Retrive the status from status_tuple
+                             if status_tuple == None:
+-                                status = c.CHUNK_NOT_CREATED
++                                backup_status = c.CHUNK_NOT_CREATED
+                             else:
+-                                status = status_tuple[c.TUPLE_STATUS]
++                                backup_status = status_tuple[c.TUPLE_STATUS]
+ 
+-                            if status == c.CHUNK_OK:
++                            if backup_status == c.CHUNK_OK:
+                                 backup_region_file = region.RegionFile(backup_region_path)
+                                 working_chunk = backup_region_file.get_chunk(local_coords[0], local_coords[1])
+ 
+@@ -1426,7 +1530,7 @@
+                                 print("Chunk replaced using backup dir: {0}".format(backup.path))
+ 
+                             else:
+-                                print("Can't use this backup directory, the chunk has the status: {0}".format(c.CHUNK_STATUS_TEXT[status]))
++                                print("Can't use this backup directory, the chunk has the status: {0}".format(c.CHUNK_STATUS_TEXT[backup_status]))
+                                 continue
+ 
+                         else:
+@@ -1495,8 +1599,9 @@
+         counter = 0
+         for regionset in self.regionsets:
+             for backup in backup_worlds:
+-                # choose the correct regionset based on the dimension
+-                # folder name and the type name (region, POI and entities)
++                # choose the correct regionset based on the canonical dimension
++                # id and the type name (region, POI and entities)
++                b_regionset = None
+                 for temp_regionset in backup.regionsets:
+                     if ( temp_regionset._get_dimension_directory() == regionset._get_dimension_directory() and
+                          temp_regionset._get_region_type_directory() == regionset._get_region_type_directory()):
+@@ -1504,10 +1609,9 @@
+                         break
+ 
+                 bad_regions = regionset.list_regions(status)
+-                if ( bad_regions and
+-                     b_regionset._get_dimension_directory() != regionset._get_dimension_directory() and
+-                     b_regionset._get_region_type_directory() != regionset._get_region_type_directory() ):
+-                    print("The regionset \'{0}\' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
++                if bad_regions and b_regionset is None:
++                    print("The regionset '{0}' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
++                    continue
+                 else:
+                     for r in bad_regions:
+                         print("\n{0:-^60}".format(' New region file to replace! Coords {0} '.format(r.get_coords())))
+@@ -1532,6 +1636,7 @@
+                                 print("Can't use this backup directory, unknown error: {0}".format(e))
+                                 continue
+                             copy(backup_region_path, tofix_region_path)
++                            _sync_external_chunk_files(backup_region_path, tofix_region_path)
+                             print("Region file replaced!")
+                             counter += 1
+                         else:
+@@ -1582,97 +1687,167 @@
+         for regionset in self.regionsets:
+             regionset.rescan_entities(options)
+ 
+-    def generate_report(self, standalone): 
+-        """ Generates a report with the results of the scan.
+-        
+-        Inputs:
+-         - standalone -- Boolean, if true the report will be a human readable String. If false the 
+-                         report will be a dictionary with all the counts of chunks and regions.
+-        
+-        Return if standalone = True:
+-         - text -- A human readable string of text with the results of the scan.
+-         
+-        Return if standlone = False:
+-         - chunk_counts -- Dictionary with all the counts of chunks for all the statuses. To read
+-                           it use the CHUNK_* constants. 
+-         - region_counts -- Dictionary with all the counts of region files for all the statuses. To read
+-                            it use the REGION_* constants.
++    def generate_report(self, standalone):
++        """Generate scan counts or a detailed human-readable world summary.
+ 
++        ``standalone=False`` keeps the original ``(chunk_counts,
++        region_counts)`` interface. ``standalone=True`` provides a detailed
++        terminal summary without replacing the exact-location output available
++        through ``--log``.
+         """
+-
+-        # collect chunk data
+-        chunk_counts = {}
+-        has_chunk_problems = False
+-        for p in c.CHUNK_PROBLEMS:
+-            chunk_counts[p] = self.count_chunks(p)
+-            if chunk_counts[p] != 0:
+-                has_chunk_problems = True
++        chunk_counts = {status: self.count_chunks(status) for status in c.CHUNK_STATUSES}
+         chunk_counts['TOTAL'] = self.count_chunks()
+-
+-        # collect region data
+-        region_counts = {}
+-        has_region_problems = False
+-        for p in c.REGION_PROBLEMS:
+-            region_counts[p] = self.count_regions(p)
+-            if region_counts[p] != 0:
+-                has_region_problems = True
++        region_counts = {status: self.count_regions(status) for status in c.REGION_STATUSES}
+         region_counts['TOTAL'] = self.count_regions()
+ 
+-        # create a text string with a report of all found
+-        if standalone:
+-            text = ""
+-
+-            # add all the player files with problems
+-            text += "\nUnreadable player files:\n"
+-            broken_players = [p for p in self.players._get_list() if p.status in c.DATAFILE_PROBLEMS]
+-            broken_players.extend([p for p in self.old_players._get_list() if p.status in c.DATAFILE_PROBLEMS])
+-            if broken_players:
+-                broken_player_files = [p.filename for p in broken_players]
+-                text += "\n".join(broken_player_files)
+-                text += "\n"
+-            else:
+-                text += "No problems found.\n"
+-
+-            # Now all the data files
+-            text += "\nUnreadable data files:\n"
+-            broken_data_files = [d for d in self.data_files._get_list() if d.status in c.DATAFILE_PROBLEMS]
+-            if broken_data_files:
+-                broken_data_filenames = [p.filename for p in broken_data_files]
+-                text += "\n".join(broken_data_filenames)
+-                text += "\n"
+-            else:
+-                text += "No problems found.\n"
+-
+-            # add all chunk info in a table format
+-            text += "\nChunk problems:\n"
+-            if has_chunk_problems:
+-                table_data = []
+-                table_data.append(['Problem', 'Count'])
+-                for p in c.CHUNK_PROBLEMS:
+-                    if chunk_counts[p] != 0:
+-                        table_data.append([c.CHUNK_STATUS_TEXT[p], chunk_counts[p]])
+-                table_data.append(['Total', chunk_counts['TOTAL']])
+-                text += table(table_data)
++        if not standalone:
++            legacy_chunk_counts = {status: chunk_counts[status] for status in c.CHUNK_PROBLEMS}
++            legacy_chunk_counts['TOTAL'] = chunk_counts['TOTAL']
++            legacy_region_counts = {status: region_counts[status] for status in c.REGION_PROBLEMS}
++            legacy_region_counts['TOTAL'] = region_counts['TOTAL']
++            return legacy_chunk_counts, legacy_region_counts
++
++        chunk_problem_total = _problem_total(chunk_counts, c.CHUNK_PROBLEMS)
++        region_problem_total = _problem_total(region_counts, c.REGION_PROBLEMS)
++
++        uuid_total = len(self.players)
++        uuid_bad = sum(1 for item in self.players._get_list() if item.status in c.DATAFILE_PROBLEMS)
++        old_player_total = len(self.old_players)
++        old_player_bad = sum(1 for item in self.old_players._get_list() if item.status in c.DATAFILE_PROBLEMS)
++        data_total = len(self.data_files)
++        data_bad = sum(1 for item in self.data_files._get_list() if item.status in c.DATAFILE_PROBLEMS)
++        level_bad = 1 if self.scanned_level.status in c.DATAFILE_PROBLEMS else 0
++        data_problem_total = uuid_bad + old_player_bad + data_bad + level_bad
++        total_problems = chunk_problem_total + region_problem_total + data_problem_total
++
++        modern_layout = False
++        legacy_layout = False
++        world_root = os.path.normcase(os.path.abspath(self.path))
++        for regionset in self.regionsets:
++            if not regionset.path:
++                continue
++            region_path = os.path.normcase(os.path.abspath(regionset.path))
++            try:
++                relative = os.path.relpath(region_path, world_root)
++            except ValueError:
++                relative = region_path
++            if relative == 'dimensions' or relative.startswith('dimensions' + os.sep):
++                modern_layout = True
+             else:
+-                text += "No problems found.\n"
+-
+-            # add all region information
+-            text += "\n\nRegion problems:\n"
+-            if has_region_problems:
+-                table_data = []
+-                table_data.append(['Problem', 'Count'])
+-                for p in c.REGION_PROBLEMS:
+-                    if region_counts[p] != 0:
+-                        table_data.append([c.REGION_STATUS_TEXT[p], region_counts[p]])
+-                table_data.append(['Total', region_counts['TOTAL']])
+-                text += table(table_data)
++                legacy_layout = True
++        if modern_layout and legacy_layout:
++            storage_layout = "Mixed legacy and namespaced-dimension layout"
++        elif modern_layout:
++            storage_layout = "Namespaced-dimension layout"
++        elif legacy_layout:
++            storage_layout = "Legacy dimension layout"
++        else:
++            storage_layout = "No region directories found"
+ 
+-            else:
+-                text += "No problems found."
++        data_version = None
++        try:
++            data_version = self.level_data['DataVersion'].value
++        except (AttributeError, KeyError, TypeError):
++            pass
++
++        region_type_counts = self.get_number_regions()
++        level_status = "OK" if not level_bad else c.DATAFILE_STATUS_TEXT.get(
++            self.scanned_level.status, "Unreadable")
++
++        lines = [
++            "=" * 72,
++            "SCAN SUMMARY",
++            "=" * 72,
++        ]
++        overview = [
++            ("World", self.get_name()),
++            ("Path", self.path),
++            ("Overall result", "CLEAN" if total_problems == 0 else "ISSUES FOUND"),
++            ("Storage layout", storage_layout),
++        ]
++        if data_version is not None:
++            overview.append(("DataVersion", data_version))
++        lines.append(_summary_kv(overview))
++
++        lines.extend(["", "FILES SCANNED"] )
++        lines.append(_summary_kv([
++            ("level.dat", level_status),
++            ("Region/Level files", _fmt_count(region_type_counts.get(c.LEVEL_DIR, 0))),
++            ("POI files", _fmt_count(region_type_counts.get(c.POI_DIR, 0))),
++            ("Entities files", _fmt_count(region_type_counts.get(c.ENTITIES_DIR, 0))),
++            ("Total region files", _fmt_count(region_counts['TOTAL'])),
++            ("UUID player files", "{0} total, {1} unreadable".format(_fmt_count(uuid_total), _fmt_count(uuid_bad))),
++            ("Old player files", "{0} total, {1} unreadable".format(_fmt_count(old_player_total), _fmt_count(old_player_bad))),
++            ("World/dimension data files", "{0} total, {1} unreadable".format(_fmt_count(data_total), _fmt_count(data_bad))),
++        ]))
++
++        lines.extend(["", "CHUNK HEALTH"] )
++        chunk_rows = [
++            ("Total scanned", _fmt_count(chunk_counts['TOTAL'])),
++            ("OK", _fmt_count(chunk_counts.get(c.CHUNK_OK, 0))),
++            ("Problems", _fmt_count(chunk_problem_total)),
++        ]
++        for status in c.CHUNK_PROBLEMS:
++            chunk_rows.append((c.CHUNK_STATUS_TEXT[status], _fmt_count(chunk_counts.get(status, 0))))
++        lines.append(_summary_kv(chunk_rows))
++
++        lines.extend(["", "REGION FILE HEALTH"] )
++        region_rows = [
++            ("Total scanned", _fmt_count(region_counts['TOTAL'])),
++            ("OK", _fmt_count(region_counts.get(c.REGION_OK, 0))),
++            ("Problems", _fmt_count(region_problem_total)),
++        ]
++        for status in c.REGION_PROBLEMS:
++            region_rows.append((c.REGION_STATUS_TEXT[status], _fmt_count(region_counts.get(status, 0))))
++        lines.append(_summary_kv(region_rows))
++
++        lines.extend(["", "PLAYER / DATA HEALTH"] )
++        lines.append(_summary_kv([
++            ("level.dat problems", _fmt_count(level_bad)),
++            ("Unreadable UUID player files", _fmt_count(uuid_bad)),
++            ("Unreadable old player files", _fmt_count(old_player_bad)),
++            ("Unreadable world/data files", _fmt_count(data_bad)),
++            ("Total data-file problems", _fmt_count(data_problem_total)),
++        ]))
++
++        lines.extend(["", "DIMENSION / REGION-TYPE BREAKDOWN"] )
++        breakdown = []
++        for regionset in sorted(
++                self.regionsets,
++                key=lambda item: (item._get_dimension_directory() or '',
++                                  item._get_region_type_directory() or '')):
++            dim_id = regionset._get_dimension_directory() or "Unknown"
++            dim_name = c.DIMENSION_NAMES.get(dim_id, dim_id)
++            type_id = regionset._get_region_type_directory() or "Unknown"
++            type_name = c.REGION_TYPES_NAMES.get(type_id, (type_id, type_id))[1]
++            rs_chunk_problems = sum(regionset.count_chunks(status) for status in c.CHUNK_PROBLEMS)
++            rs_region_problems = sum(regionset.count_regions(status) for status in c.REGION_PROBLEMS)
++            breakdown.append([
++                dim_name,
++                type_name,
++                _fmt_count(regionset.count_regions()),
++                _fmt_count(regionset.count_chunks()),
++                _fmt_count(rs_chunk_problems + rs_region_problems),
++            ])
++        if breakdown:
++            lines.append(_summary_table(
++                ["Dimension", "Type", "Regions", "Chunks", "Issues"],
++                breakdown))
++        else:
++            lines.append("  No region sets were discovered.")
+ 
+-            return text
++        lines.extend(["", "RESULT"] )
++        if total_problems == 0:
++            lines.append("  CLEAN - No problems found. No chunk, region, player, or data-file problems were detected.")
+         else:
+-            return chunk_counts, region_counts
++            lines.append(
++                "  ISSUES FOUND - {0} chunk {1}, {2} region {3}, and {4} data-file {5}.".format(
++                    _fmt_count(chunk_problem_total), _plural(chunk_problem_total, "problem"),
++                    _fmt_count(region_problem_total), _plural(region_problem_total, "problem"),
++                    _fmt_count(data_problem_total), _plural(data_problem_total, "problem")))
++            lines.append("  Use --log <file> for exact problematic chunk/file locations.")
++        lines.append("=" * 72)
++        return "\n".join(lines)
+ 
+ 
+ 
+@@ -1914,6 +2089,42 @@
+     return coordX, coordZ
+ 
+ 
++def _external_chunk_files_for_region(region_path):
++    """Return external .mcc payloads belonging to a region file."""
++    try:
++        region_x, region_z = get_region_coords(os.path.basename(region_path))
++    except (ValueError, IndexError):
++        return []
++
++    result = []
++    directory = os.path.dirname(region_path)
++    for external_path in glob(join(directory, "c.*.*.mcc")):
++        parts = os.path.basename(external_path).split('.')
++        if len(parts) != 4 or parts[0] != 'c' or parts[3] != 'mcc':
++            continue
++        try:
++            chunk_x = int(parts[1])
++            chunk_z = int(parts[2])
++        except ValueError:
++            continue
++        if chunk_x // 32 == region_x and chunk_z // 32 == region_z:
++            result.append(external_path)
++    return result
++
++
++def _sync_external_chunk_files(source_region_path, destination_region_path):
++    """Mirror external chunk sidecars when replacing a complete region."""
++    if os.path.abspath(source_region_path) == os.path.abspath(destination_region_path):
++        return
++
++    for external_path in _external_chunk_files_for_region(destination_region_path):
++        remove(external_path)
++
++    destination_directory = os.path.dirname(destination_region_path)
++    for external_path in _external_chunk_files_for_region(source_region_path):
++        copy(external_path, join(destination_directory, os.path.basename(external_path)))
++
++
+ def get_region_coords(filename):
+     """ Get and return a region file coordinates from path.
+     
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/tests/test_legacy_compat.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/tests/test_legacy_compat.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/tests/test_legacy_compat.py	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/tests/test_legacy_compat.py	2026-08-25 18:11:29.413133426 +0000
+@@ -0,0 +1,204 @@
++import io
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++import unittest
++
++from nbt import nbt
++from nbt import region
++from regionfixer_core import constants as c
++from regionfixer_core.scan import scan_data, scan_region_file
++from regionfixer_core.world import ScannedDataFile, ScannedRegionFile, World
++
++
++def nbt_bytes(tags):
++    root = nbt.NBTFile()
++    root.name = ""
++    root.tags.extend(tags)
++    buffer = io.BytesIO()
++    root.write_file(buffer=buffer)
++    return buffer.getvalue()
++
++
++def legacy_level_chunk(x=0, z=0):
++    level = nbt.TAG_Compound(name="Level")
++    level.tags.append(nbt.TAG_Int(name="xPos", value=x))
++    level.tags.append(nbt.TAG_Int(name="zPos", value=z))
++    level.tags.append(nbt.TAG_List(name="Entities", type=nbt.TAG_Compound))
++    return nbt_bytes([
++        nbt.TAG_Int(name="DataVersion", value=1343),  # Java 1.12.2-era layout
++        level,
++    ])
++
++
++def modern_level_chunk(x=0, z=0):
++    return nbt_bytes([
++        nbt.TAG_Int(name="DataVersion", value=5000),
++        nbt.TAG_Int(name="xPos", value=x),
++        nbt.TAG_Int(name="zPos", value=z),
++        nbt.TAG_List(name="sections", type=nbt.TAG_Compound),
++    ])
++
++
++def write_region(path, raw_chunk, compression=region.COMPRESSION_ZLIB):
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    open(path, "wb").close()
++    rf = region.RegionFile(path)
++    try:
++        rf.write_blockdata(0, 0, raw_chunk, compression=compression)
++    finally:
++        rf.close()
++
++
++def write_level_dat(world_path, name="Compatibility Test World"):
++    root = nbt.NBTFile()
++    root.name = ""
++    data = nbt.TAG_Compound(name="Data")
++    data.tags.append(nbt.TAG_String(name="LevelName", value=name))
++    root.tags.append(data)
++    os.makedirs(world_path, exist_ok=True)
++    root.write_file(filename=os.path.join(world_path, "level.dat"))
++
++
++class LegacyCompatibilityTests(unittest.TestCase):
++    def setUp(self):
++        self.tempdir = tempfile.mkdtemp(prefix="regionfixer-legacy-")
++
++    def tearDown(self):
++        shutil.rmtree(self.tempdir)
++
++    def test_legacy_root_region_still_scans_cleanly(self):
++        path = os.path.join(self.tempdir, "region", "r.0.0.mca")
++        write_region(path, legacy_level_chunk())
++        scanned = scan_region_file(ScannedRegionFile(path, folder="region"), 300, False)
++        self.assertEqual(scanned.status, c.REGION_OK)
++        self.assertEqual(scanned[(0, 0)][c.TUPLE_STATUS], c.CHUNK_OK)
++
++    def test_modern_chunk_format_still_scans_cleanly(self):
++        path = os.path.join(self.tempdir, "region", "r.0.0.mca")
++        write_region(path, modern_level_chunk())
++        scanned = scan_region_file(ScannedRegionFile(path, folder="region"), 300, False)
++        self.assertEqual(scanned.status, c.REGION_OK)
++        self.assertEqual(scanned[(0, 0)][c.TUPLE_STATUS], c.CHUNK_OK)
++
++    def test_legacy_gzip_and_zlib_compression_remain_supported(self):
++        raw = legacy_level_chunk()
++        for compression in (region.COMPRESSION_GZIP, region.COMPRESSION_ZLIB):
++            path = os.path.join(self.tempdir, str(compression), "r.0.0.mca")
++            write_region(path, raw, compression=compression)
++            rf = region.RegionFile(path)
++            try:
++                self.assertEqual(rf.get_blockdata(0, 0), raw)
++            finally:
++                rf.close()
++
++    def test_legacy_idcounts_uncompressed_nbt_still_scans(self):
++        path = os.path.join(self.tempdir, "data", "idcounts.dat")
++        os.makedirs(os.path.dirname(path), exist_ok=True)
++        with open(path, "wb") as handle:
++            handle.write(nbt_bytes([nbt.TAG_Int(name="map", value=7)]))
++        result = scan_data(ScannedDataFile(path))
++        self.assertEqual(result.status, c.DATAFILE_OK)
++
++    def test_old_dimension_layout_is_discovered(self):
++        for relative in (
++            "region/r.0.0.mca",
++            "DIM-1/region/r.0.0.mca",
++            "DIM1/region/r.0.0.mca",
++        ):
++            write_region(os.path.join(self.tempdir, relative), legacy_level_chunk())
++        discovered = {r._get_dimension_directory() for r in World(self.tempdir).regionsets}
++        self.assertEqual(discovered, {
++            "minecraft/overworld",
++            "minecraft/the_nether",
++            "minecraft/the_end",
++        })
++
++    def test_cross_version_chunk_replacement_does_not_mix_dimensions_or_status(self):
++        target_path = os.path.join(self.tempdir, "target-modern")
++        backup_path = os.path.join(self.tempdir, "backup-legacy")
++
++        # Both target chunks are wrong-located. The legacy Overworld backup is
++        # healthy, while the legacy Nether backup is intentionally also wrong.
++        write_region(
++            os.path.join(target_path, "dimensions", "minecraft", "overworld", "region", "r.0.0.mca"),
++            modern_level_chunk(x=1, z=0),
++        )
++        write_region(
++            os.path.join(target_path, "dimensions", "minecraft", "the_nether", "region", "r.0.0.mca"),
++            modern_level_chunk(x=1, z=0),
++        )
++        write_region(os.path.join(backup_path, "region", "r.0.0.mca"), legacy_level_chunk(x=0, z=0))
++        write_region(os.path.join(backup_path, "DIM-1", "region", "r.0.0.mca"), legacy_level_chunk(x=1, z=0))
++
++        target = World(target_path)
++        backup = World(backup_path)
++        for regionset in target.regionsets:
++            for coords, scanned_region in list(regionset._set.items()):
++                regionset._set[coords] = scan_region_file(scanned_region, 300, False)
++
++        fixed = target.replace_problematic_chunks(
++            [backup], c.CHUNK_WRONG_LOCATED, 300, False
++        )
++        self.assertEqual(fixed, 1)
++
++        statuses = {}
++        for regionset in World(target_path).regionsets:
++            scanned = scan_region_file(next(iter(regionset._set.values())), 300, False)
++            statuses[regionset._get_dimension_directory()] = scanned[(0, 0)][c.TUPLE_STATUS]
++
++        self.assertEqual(statuses["minecraft/overworld"], c.CHUNK_OK)
++        self.assertEqual(statuses["minecraft/the_nether"], c.CHUNK_WRONG_LOCATED)
++
++    def test_cli_entry_point_and_existing_verbose_option_still_work(self):
++        world_path = os.path.join(self.tempdir, "Legacy Test World")
++        write_region(os.path.join(world_path, "region", "r.0.0.mca"), legacy_level_chunk())
++        write_level_dat(world_path, "Legacy Test World")
++        project_root = os.path.dirname(os.path.dirname(__file__))
++        result = subprocess.run(
++            [sys.executable, os.path.join(project_root, "regionfixer.py"), "--verbose", world_path],
++            cwd=project_root,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.STDOUT,
++            text=True,
++            timeout=30,
++        )
++        self.assertEqual(result.returncode, c.RV_OK, msg=result.stdout)
++        self.assertIn("Scanning world:", result.stdout)
++        self.assertIn("No problems found", result.stdout)
++
++
++class ModernDataLocationTests(unittest.TestCase):
++    def setUp(self):
++        self.tempdir = tempfile.mkdtemp(prefix="regionfixer-modern-data-")
++
++    def tearDown(self):
++        shutil.rmtree(self.tempdir)
++
++    def test_modern_last_id_uncompressed_nbt_scans(self):
++        path = os.path.join(self.tempdir, "data", "minecraft", "maps", "last_id.dat")
++        os.makedirs(os.path.dirname(path), exist_ok=True)
++        with open(path, "wb") as handle:
++            handle.write(nbt_bytes([nbt.TAG_Int(name="map", value=12)]))
++        result = scan_data(ScannedDataFile(path))
++        self.assertEqual(result.status, c.DATAFILE_OK)
++
++    def test_dimension_specific_data_files_are_included(self):
++        root_data = os.path.join(self.tempdir, "data", "minecraft", "weather.dat")
++        end_data = os.path.join(
++            self.tempdir,
++            "dimensions", "minecraft", "the_end", "data", "minecraft", "ender_dragon_fight.dat",
++        )
++        for path in (root_data, end_data):
++            os.makedirs(os.path.dirname(path), exist_ok=True)
++            # The discovery test only needs a .dat file; parsing is tested elsewhere.
++            open(path, "wb").close()
++        world = World(self.tempdir)
++        self.assertIn(root_data, world.data_files._set)
++        self.assertIn(end_data, world.data_files._set)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/tests/test_modern_worlds.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/tests/test_modern_worlds.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/tests/test_modern_worlds.py	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/tests/test_modern_worlds.py	2026-08-25 18:11:29.412998793 +0000
+@@ -0,0 +1,236 @@
++import io
++import os
++import shutil
++import struct
++import subprocess
++import sys
++import tempfile
++import unittest
++import zlib
++
++from regionfixer_core.world import World
++from nbt import region
++from nbt import lz4_java
++from nbt import nbt
++
++
++
++
++def modern_chunk_nbt_bytes(x=0, z=0, data_version=5000):
++    root = nbt.NBTFile()
++    root.name = ""
++    root.tags.append(nbt.TAG_Int(name="DataVersion", value=data_version))
++    root.tags.append(nbt.TAG_Int(name="xPos", value=x))
++    root.tags.append(nbt.TAG_Int(name="zPos", value=z))
++    root.tags.append(nbt.TAG_List(name="sections", type=nbt.TAG_Compound))
++    buffer = io.BytesIO()
++    root.write_file(buffer=buffer)
++    return buffer.getvalue()
++
++
++def write_level_dat(world_path, name="Modern Test World"):
++    root = nbt.NBTFile()
++    root.name = ""
++    data = nbt.TAG_Compound(name="Data")
++    data.tags.append(nbt.TAG_String(name="LevelName", value=name))
++    root.tags.append(data)
++    root.write_file(filename=os.path.join(world_path, "level.dat"))
++
++
++def make_empty_region(path):
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    with open(path, "wb") as handle:
++        handle.write(b"\x00" * (2 * region.SECTOR_LENGTH))
++
++
++def write_raw_region_chunk(path, payload, compression_byte):
++    """Create r.0.0.mca with one chunk at local 0,0."""
++    if len(payload) + 5 > region.SECTOR_LENGTH:
++        raise ValueError("test payload too large")
++    make_empty_region(path)
++    with open(path, "r+b") as handle:
++        handle.seek(0)
++        handle.write(struct.pack(">IB", 2, 1)[1:])
++        handle.seek(2 * region.SECTOR_LENGTH)
++        handle.write(struct.pack(">I", len(payload) + 1))
++        handle.write(struct.pack(">B", compression_byte))
++        handle.write(payload)
++        handle.write(b"\x00" * (region.SECTOR_LENGTH - len(payload) - 5))
++
++
++def raw_lz4_java_stream(data):
++    # 64 KiB block size => compression level token low nibble 6.
++    token = 0x16
++    checksum = lz4_java.xxhash32(data, lz4_java.XXHASH_SEED) & lz4_java.CHECKSUM_MASK
++    block = (lz4_java.MAGIC + bytes([token]) +
++             struct.pack("<III", len(data), len(data), checksum) + data)
++    terminal = lz4_java.MAGIC + bytes([token]) + struct.pack("<III", 0, 0, 0)
++    return block + terminal
++
++
++class ModernWorldLayoutTests(unittest.TestCase):
++    def setUp(self):
++        self.tempdir = tempfile.mkdtemp(prefix="regionfixer-modern-")
++
++    def tearDown(self):
++        shutil.rmtree(self.tempdir)
++
++    def test_discovers_modern_default_and_custom_dimensions(self):
++        paths = [
++            "dimensions/minecraft/overworld/region/r.0.0.mca",
++            "dimensions/minecraft/overworld/poi/r.0.0.mca",
++            "dimensions/minecraft/overworld/entities/r.0.0.mca",
++            "dimensions/minecraft/the_nether/region/r.0.0.mca",
++            "dimensions/minecraft/the_end/region/r.0.0.mca",
++            "dimensions/example/deep/caverns/region/r.0.0.mca",
++        ]
++        for relative in paths:
++            make_empty_region(os.path.join(self.tempdir, relative))
++
++        modern_player = os.path.join(self.tempdir, "players", "data", "player.dat")
++        os.makedirs(os.path.dirname(modern_player), exist_ok=True)
++        open(modern_player, "wb").close()
++        namespaced_data = os.path.join(self.tempdir, "data", "minecraft", "weather.dat")
++        os.makedirs(os.path.dirname(namespaced_data), exist_ok=True)
++        open(namespaced_data, "wb").close()
++
++        world = World(self.tempdir)
++        discovered = {(r._get_dimension_directory(), r._get_region_type_directory())
++                      for r in world.regionsets}
++
++        self.assertIn(("minecraft/overworld", "region"), discovered)
++        self.assertIn(("minecraft/overworld", "poi"), discovered)
++        self.assertIn(("minecraft/overworld", "entities"), discovered)
++        self.assertIn(("minecraft/the_nether", "region"), discovered)
++        self.assertIn(("minecraft/the_end", "region"), discovered)
++        self.assertIn(("example/deep/caverns", "region"), discovered)
++        self.assertTrue(world.isworld)
++        self.assertIn(modern_player, world.players._set)
++        self.assertIn(namespaced_data, world.data_files._set)
++
++    def test_legacy_and_modern_dimension_ids_match(self):
++        old = os.path.join(self.tempdir, "old")
++        new = os.path.join(self.tempdir, "new")
++        make_empty_region(os.path.join(old, "region", "r.0.0.mca"))
++        make_empty_region(os.path.join(old, "DIM-1", "region", "r.0.0.mca"))
++        make_empty_region(os.path.join(old, "DIM1", "region", "r.0.0.mca"))
++        make_empty_region(os.path.join(new, "dimensions", "minecraft", "overworld", "region", "r.0.0.mca"))
++        make_empty_region(os.path.join(new, "dimensions", "minecraft", "the_nether", "region", "r.0.0.mca"))
++        make_empty_region(os.path.join(new, "dimensions", "minecraft", "the_end", "region", "r.0.0.mca"))
++
++        old_ids = {r._get_dimension_directory() for r in World(old).regionsets}
++        new_ids = {r._get_dimension_directory() for r in World(new).regionsets}
++        self.assertEqual(old_ids, new_ids)
++        self.assertEqual(old_ids, {"minecraft/overworld", "minecraft/the_nether", "minecraft/the_end"})
++
++
++class ModernRegionFormatTests(unittest.TestCase):
++    def setUp(self):
++        self.tempdir = tempfile.mkdtemp(prefix="regionfixer-region-")
++        self.region_path = os.path.join(self.tempdir, "r.0.0.mca")
++
++    def tearDown(self):
++        shutil.rmtree(self.tempdir)
++
++    def test_compression_id_3_uncompressed(self):
++        raw = b"modern-uncompressed-chunk-data"
++        write_raw_region_chunk(self.region_path, raw, region.COMPRESSION_NONE)
++        rf = region.RegionFile(self.region_path)
++        try:
++            self.assertEqual(rf.get_blockdata(0, 0), raw)
++        finally:
++            rf.close()
++
++    def test_compression_id_4_lz4_java_block_stream(self):
++        raw = (b"LZ4 modern region data " * 20)
++        stream = raw_lz4_java_stream(raw)
++        write_raw_region_chunk(self.region_path, stream, region.COMPRESSION_LZ4)
++        rf = region.RegionFile(self.region_path)
++        try:
++            self.assertEqual(rf.get_blockdata(0, 0), raw)
++        finally:
++            rf.close()
++
++    def test_compression_id_4_real_compressed_lz4_block_and_full_checksum(self):
++        # Raw LZ4 block for b"abcd" * 4:
++        # 4 literal bytes followed by a 12-byte match at offset 4.
++        raw = b"abcd" * 4
++        compressed = bytes([0x48]) + b"abcd" + b"\x04\x00"
++        token = 0x26  # LZ4 method + 64 KiB block-size level.
++        checksum = lz4_java.xxhash32(raw, lz4_java.XXHASH_SEED)
++        self.assertGreater(checksum, 0x0FFFFFFF)  # catches truncated-checksum bugs
++        block = (lz4_java.MAGIC + bytes([token]) +
++                 struct.pack("<III", len(compressed), len(raw), checksum) + compressed)
++        terminal = lz4_java.MAGIC + bytes([0x16]) + struct.pack("<III", 0, 0, 0)
++        write_raw_region_chunk(self.region_path, block + terminal, region.COMPRESSION_LZ4)
++        rf = region.RegionFile(self.region_path)
++        try:
++            self.assertEqual(rf.get_blockdata(0, 0), raw)
++        finally:
++            rf.close()
++
++    def test_external_mcc_chunk_read_and_unlink(self):
++        raw = b"external modern chunk"
++        payload = zlib.compress(raw)
++        write_raw_region_chunk(self.region_path, b"", region.EXTERNAL_CHUNK_FLAG | region.COMPRESSION_ZLIB)
++        # External chunks have length=1, not 1+payload; adjust the generated header.
++        with open(self.region_path, "r+b") as handle:
++            handle.seek(2 * region.SECTOR_LENGTH)
++            handle.write(struct.pack(">I", 1))
++            handle.write(struct.pack(">B", region.EXTERNAL_CHUNK_FLAG | region.COMPRESSION_ZLIB))
++        external_path = os.path.join(self.tempdir, "c.0.0.mcc")
++        with open(external_path, "wb") as handle:
++            handle.write(payload)
++
++        rf = region.RegionFile(self.region_path)
++        self.assertTrue(rf.metadata[0, 0].external)
++        self.assertEqual(rf.get_blockdata(0, 0), raw)
++        rf.unlink_chunk(0, 0)
++        rf.close()
++        self.assertFalse(os.path.exists(external_path))
++
++    def test_oversized_write_uses_external_sidecar(self):
++        # Type 3 avoids compression so the sector limit is deterministic.
++        raw = bytes(range(256)) * 4200  # ~1.07 MiB > 255 sectors
++        open(self.region_path, "wb").close()
++        rf = region.RegionFile(self.region_path)
++        rf.write_blockdata(0, 0, raw, compression=region.COMPRESSION_NONE)
++        self.assertTrue(rf.metadata[0, 0].external)
++        self.assertEqual(rf.metadata[0, 0].blocklength, 1)
++        self.assertEqual(rf.get_blockdata(0, 0), raw)
++        rf.close()
++        self.assertTrue(os.path.exists(os.path.join(self.tempdir, "c.0.0.mcc")))
++
++
++class ModernEndToEndTests(unittest.TestCase):
++    def setUp(self):
++        self.tempdir = tempfile.mkdtemp(prefix="regionfixer-modern-cli-")
++
++    def tearDown(self):
++        shutil.rmtree(self.tempdir)
++
++    def test_cli_scans_modern_overworld_with_lz4_region(self):
++        region_path = os.path.join(
++            self.tempdir, "dimensions", "minecraft", "overworld", "region", "r.0.0.mca"
++        )
++        os.makedirs(os.path.dirname(region_path), exist_ok=True)
++        raw_nbt = modern_chunk_nbt_bytes()
++        write_raw_region_chunk(region_path, raw_lz4_java_stream(raw_nbt), region.COMPRESSION_LZ4)
++        write_level_dat(self.tempdir)
++
++        project_root = os.path.dirname(os.path.dirname(__file__))
++        result = subprocess.run(
++            [sys.executable, os.path.join(project_root, "regionfixer.py"), "--verbose", self.tempdir],
++            cwd=project_root,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.STDOUT,
++            text=True,
++            timeout=30,
++        )
++        self.assertEqual(result.returncode, 0, msg=result.stdout)
++        self.assertIn("1 region/level files", result.stdout)
++        self.assertIn("No problems found", result.stdout)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff -ruN '--exclude=__pycache__' '--exclude=*.pyc' '--exclude=UPSTREAM_TO_0.4.0.diff' /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/tests/test_scan_summary.py /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/tests/test_scan_summary.py
+--- /mnt/data/mrf-upstream-original/Minecraft-Region-Fixer-master/tests/test_scan_summary.py	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/Minecraft-Region-Fixer-Modern-0.4.0-revised/tests/test_scan_summary.py	2026-08-25 18:15:41.507983034 +0000
+@@ -0,0 +1,147 @@
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++import unittest
++
++from nbt import nbt
++from nbt import region
++from regionfixer_core import constants as c
++from regionfixer_core.world import RegionSet, World
++
++
++def write_level_dat(world_path, name="Summary Test World", data_version=5000):
++    root = nbt.NBTFile()
++    root.name = ""
++    data = nbt.TAG_Compound(name="Data")
++    data.tags.append(nbt.TAG_String(name="LevelName", value=name))
++    data.tags.append(nbt.TAG_Int(name="DataVersion", value=data_version))
++    root.tags.append(data)
++    os.makedirs(world_path, exist_ok=True)
++    root.write_file(filename=os.path.join(world_path, "level.dat"))
++
++
++def chunk_bytes(x=0, z=0):
++    root = nbt.NBTFile()
++    root.name = ""
++    root.tags.append(nbt.TAG_Int(name="DataVersion", value=5000))
++    root.tags.append(nbt.TAG_Int(name="xPos", value=x))
++    root.tags.append(nbt.TAG_Int(name="zPos", value=z))
++    root.tags.append(nbt.TAG_List(name="sections", type=nbt.TAG_Compound))
++    import io
++    buffer = io.BytesIO()
++    root.write_file(buffer=buffer)
++    return buffer.getvalue()
++
++
++def write_region(path):
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    open(path, "wb").close()
++    rf = region.RegionFile(path)
++    try:
++        rf.write_blockdata(0, 0, chunk_bytes(), compression=region.COMPRESSION_ZLIB)
++    finally:
++        rf.close()
++
++
++class ScanSummaryTests(unittest.TestCase):
++    def setUp(self):
++        self.tempdir = tempfile.mkdtemp(prefix="regionfixer-summary-")
++
++    def tearDown(self):
++        shutil.rmtree(self.tempdir)
++
++    def test_cli_clean_world_has_detailed_readable_summary(self):
++        write_level_dat(self.tempdir)
++        write_region(os.path.join(
++            self.tempdir, "dimensions", "minecraft", "overworld", "region", "r.0.0.mca"
++        ))
++        project_root = os.path.dirname(os.path.dirname(__file__))
++        result = subprocess.run(
++            [sys.executable, os.path.join(project_root, "regionfixer.py"), "--verbose", self.tempdir],
++            cwd=project_root,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.STDOUT,
++            text=True,
++            timeout=30,
++        )
++        self.assertEqual(result.returncode, c.RV_OK, msg=result.stdout)
++        for expected in (
++            "SCAN SUMMARY",
++            "Overall result  CLEAN",
++            "Storage layout  Namespaced-dimension layout",
++            "DataVersion     5000",
++            "FILES SCANNED",
++            "CHUNK HEALTH",
++            "REGION FILE HEALTH",
++            "PLAYER / DATA HEALTH",
++            "DIMENSION / REGION-TYPE BREAKDOWN",
++            "Overworld",
++            "Level/Region",
++            "RESULT",
++            "No problems found",
++        ):
++            self.assertIn(expected, result.stdout)
++
++
++    def test_cli_problem_world_summarizes_problem_categories(self):
++        write_level_dat(self.tempdir, name="Problem Summary World")
++        # Write a chunk into r.0.0.mca whose NBT claims it belongs at x=5.
++        # Region Fixer should classify it as wrong-located.
++        region_path = os.path.join(
++            self.tempdir, "dimensions", "minecraft", "overworld", "region", "r.0.0.mca"
++        )
++        os.makedirs(os.path.dirname(region_path), exist_ok=True)
++        open(region_path, "wb").close()
++        root = nbt.NBTFile()
++        root.name = ""
++        root.tags.append(nbt.TAG_Int(name="DataVersion", value=5000))
++        root.tags.append(nbt.TAG_Int(name="xPos", value=5))
++        root.tags.append(nbt.TAG_Int(name="zPos", value=0))
++        root.tags.append(nbt.TAG_List(name="sections", type=nbt.TAG_Compound))
++        import io
++        buffer = io.BytesIO()
++        root.write_file(buffer=buffer)
++        rf = region.RegionFile(region_path)
++        try:
++            rf.write_blockdata(0, 0, buffer.getvalue(), compression=region.COMPRESSION_ZLIB)
++        finally:
++            rf.close()
++
++        bad_data = os.path.join(self.tempdir, "data", "minecraft", "broken.dat")
++        os.makedirs(os.path.dirname(bad_data), exist_ok=True)
++        with open(bad_data, "wb") as handle:
++            handle.write(b"not valid nbt")
++
++        project_root = os.path.dirname(os.path.dirname(__file__))
++        result = subprocess.run(
++            [sys.executable, os.path.join(project_root, "regionfixer.py"), "--verbose", self.tempdir],
++            cwd=project_root,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.STDOUT,
++            text=True,
++            timeout=30,
++        )
++        self.assertEqual(result.returncode, c.RV_BAD_WORLD, msg=result.stdout)
++        self.assertIn("Overall result  ISSUES FOUND", result.stdout)
++        self.assertIn("Wrong located         1", result.stdout)
++        self.assertIn("World/dimension data files  1 total, 1 unreadable", result.stdout)
++        self.assertIn("ISSUES FOUND - 1 chunk problem, 0 region problems, and 1 data-file problem.", result.stdout)
++        self.assertIn("Use --log <file> for exact problematic chunk/file locations.", result.stdout)
++
++    def test_generate_report_false_keeps_legacy_key_shape(self):
++        region_set = RegionSet(region_list=[])
++        chunk_counts, region_counts = region_set.generate_report(False)
++        self.assertEqual(set(chunk_counts), set(c.CHUNK_PROBLEMS) | {"TOTAL"})
++        self.assertEqual(set(region_counts), set(c.REGION_PROBLEMS) | {"TOTAL"})
++
++        write_level_dat(self.tempdir)
++        world = World(self.tempdir)
++        chunk_counts, region_counts = world.generate_report(False)
++        self.assertEqual(set(chunk_counts), set(c.CHUNK_PROBLEMS) | {"TOTAL"})
++        self.assertEqual(set(region_counts), set(c.REGION_PROBLEMS) | {"TOTAL"})
++
++
++if __name__ == "__main__":
++    unittest.main()

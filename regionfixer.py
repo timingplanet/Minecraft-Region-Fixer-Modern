@@ -160,6 +160,10 @@ def main():
                                      usage=usage,
                                      epilog=epilog)
 
+    parser.add_argument('--version',
+                        action='version',
+                        version='%(prog)s {0}'.format(version_string))
+
     parser.add_argument('--text-file-input',
                         '--tf',
                         help=('Path to a text file with a list of world folders and region '

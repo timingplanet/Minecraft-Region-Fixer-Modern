@@ -16,6 +16,10 @@ import gzip
 from io import BytesIO
 import time
 from os import SEEK_END
+import os
+import re
+
+from . import lz4_java
 
 # constants
 
@@ -47,12 +51,18 @@ STATUS_CHUNK_OK = 0
 STATUS_CHUNK_NOT_CREATED = 1
 """Constant indicating an normal status: the chunk does not exist"""
 
-COMPRESSION_NONE = 0
-"""Constant indicating that the chunk is not compressed."""
+COMPRESSION_NONE_LEGACY = 0
+"""Legacy nbt-library value for uncompressed chunks (accepted for compatibility)."""
 COMPRESSION_GZIP = 1
 """Constant indicating that the chunk is GZip compressed."""
 COMPRESSION_ZLIB = 2
 """Constant indicating that the chunk is zlib compressed."""
+COMPRESSION_NONE = 3
+"""Minecraft region compression id 3: uncompressed NBT data."""
+COMPRESSION_LZ4 = 4
+"""Minecraft region compression id 4: lz4-java LZ4Block stream."""
+EXTERNAL_CHUNK_FLAG = 0x80
+"""High bit indicating that the compressed payload is stored in c.<x>.<z>.mcc."""
 
 
 # TODO: reconsider these errors. where are they catched? Where would an implementation make a difference in handling the different exceptions.
@@ -105,11 +115,14 @@ class ChunkMetadata(object):
         """length of the block in bytes. This excludes the 4-byte length header,
         and includes the 1-byte compression byte. (32 bit int)"""
         self.compression = None
-        """type of compression used for the chunk block. (8 bit int).
-    
-        - 0: uncompressed
+        """type of compression used for the chunk block. (low 7 bits).
+
         - 1: gzip compression
-        - 2: zlib compression"""
+        - 2: zlib compression
+        - 3: uncompressed
+        - 4: lz4-java LZ4Block compression"""
+        self.external = False
+        """True when the payload is stored in a sibling c.<x>.<z>.mcc file."""
         self.status = STATUS_CHUNK_NOT_CREATED
         """status as determined from blockstart, blocklength, length, file size
         and location of other chunks in the file.
@@ -374,14 +387,17 @@ class RegionFile(object):
                     self.file.seek(m.blockstart*SECTOR_LENGTH) # offset comes in sectors of 4096 bytes
                     length = unpack(">I", self.file.read(4))
                     m.length = length[0] # unpack always returns a tuple, even unpacking one element
-                    compression = unpack(">B",self.file.read(1))
-                    m.compression = compression[0]
-                except IOError:
+                    compression = unpack(">B", self.file.read(1))[0]
+                    m.external = bool(compression & EXTERNAL_CHUNK_FLAG)
+                    m.compression = compression & ~EXTERNAL_CHUNK_FLAG
+                except (IOError, EOFError):
                     m.status = STATUS_CHUNK_OUT_OF_FILE
                     continue
                 if m.blockstart*SECTOR_LENGTH + m.length + 4 > self.size:
                     m.status = STATUS_CHUNK_OUT_OF_FILE
-                elif m.length <= 1: # chunk can't be zero length
+                elif m.length < 1 or (m.length == 1 and not m.external):
+                    # External chunks legitimately have a one-byte body: only
+                    # the compression byte lives in the .mca file.
                     m.status = STATUS_CHUNK_ZERO_LENGTH
                 elif m.length + 4 > m.blocklength * SECTOR_LENGTH:
                     # There are not enough sectors allocated for the whole block
@@ -520,6 +536,39 @@ class RegionFile(object):
         """Return the number of defined chunks. This includes potentially corrupt chunks."""
         return len(self.get_metadata())
 
+    def _region_coords_from_filename(self):
+        """Return (region_x, region_z) parsed from r.<x>.<z>.mca."""
+        if not self.filename:
+            raise ChunkDataError("External chunk storage requires a named region file")
+        match = re.match(r"^r\.(-?\d+)\.(-?\d+)\.mca$", os.path.basename(self.filename))
+        if not match:
+            raise ChunkDataError("Can't determine region coordinates from %s" % self.filename)
+        return int(match.group(1)), int(match.group(2))
+
+    def _external_chunk_path(self, x, z):
+        region_x, region_z = self._region_coords_from_filename()
+        global_x = region_x * 32 + x
+        global_z = region_z * 32 + z
+        return os.path.join(os.path.dirname(self.filename),
+                            "c.%d.%d.mcc" % (global_x, global_z))
+
+    @staticmethod
+    def _decompress_payload(chunk, compression):
+        if compression == COMPRESSION_GZIP:
+            # Python 3.1 and earlier do not yet support gzip.decompress(chunk)
+            f = gzip.GzipFile(fileobj=BytesIO(chunk))
+            try:
+                return bytes(f.read())
+            finally:
+                f.close()
+        elif compression == COMPRESSION_ZLIB:
+            return zlib.decompress(chunk)
+        elif compression in (COMPRESSION_NONE, COMPRESSION_NONE_LEGACY):
+            return chunk
+        elif compression == COMPRESSION_LZ4:
+            return lz4_java.decompress(chunk)
+        raise ChunkDataError('Unknown chunk compression/format (%s)' % compression)
+
     def get_blockdata(self, x, z):
         """
         Return the decompressed binary data representing a chunk.
@@ -553,24 +602,21 @@ class RegionFile(object):
 
         err = None
         try:
-            # offset comes in sectors of 4096 bytes + length bytes + compression byte
-            self.file.seek(m.blockstart * SECTOR_LENGTH + 5)
-            # Do not read past the length of the file.
-            # The length in the file includes the compression byte, hence the -1.
-            length = min(m.length - 1, self.size - (m.blockstart * SECTOR_LENGTH + 5))
-            chunk = self.file.read(length)
-            
-            if (m.compression == COMPRESSION_GZIP):
-                # Python 3.1 and earlier do not yet support gzip.decompress(chunk)
-                f = gzip.GzipFile(fileobj=BytesIO(chunk))
-                chunk = bytes(f.read())
-                f.close()
-            elif (m.compression == COMPRESSION_ZLIB):
-                chunk = zlib.decompress(chunk)
-            elif m.compression != COMPRESSION_NONE:
-                raise ChunkDataError('Unknown chunk compression/format (%s)' % m.compression)
-            
-            return chunk
+            if m.external:
+                external_path = self._external_chunk_path(x, z)
+                if not os.path.isfile(external_path):
+                    raise ChunkDataError("External chunk payload is missing: %s" % external_path)
+                with open(external_path, "rb") as external_file:
+                    chunk = external_file.read()
+            else:
+                # offset comes in sectors of 4096 bytes + length bytes + compression byte
+                self.file.seek(m.blockstart * SECTOR_LENGTH + 5)
+                # Do not read past the length of the file. The length in the
+                # file includes the compression byte, hence the -1.
+                length = min(m.length - 1, self.size - (m.blockstart * SECTOR_LENGTH + 5))
+                chunk = self.file.read(length)
+
+            return self._decompress_payload(chunk, m.compression)
         except RegionFileFormatError:
             raise
         except Exception as e:
@@ -622,98 +668,115 @@ class RegionFile(object):
         return self.get_nbt(x, z)
 
     def write_blockdata(self, x, z, data, compression=COMPRESSION_ZLIB):
-        """
-        Compress the data, write it to file, and add pointers in the header so it 
-        can be found as chunk(x,z).
-        """
+        """Compress and write a chunk, using external .mcc storage if needed."""
         if compression == COMPRESSION_GZIP:
-            # Python 3.1 and earlier do not yet support `data = gzip.compress(data)`.
             compressed_file = BytesIO()
-            f = gzip.GzipFile(fileobj=compressed_file)
+            f = gzip.GzipFile(fileobj=compressed_file, mode="wb")
             f.write(data)
             f.close()
             compressed_file.seek(0)
             data = compressed_file.read()
-            del compressed_file
         elif compression == COMPRESSION_ZLIB:
-            data = zlib.compress(data) # use zlib compression, rather than Gzip
-        elif compression != COMPRESSION_NONE:
+            data = zlib.compress(data)
+        elif compression in (COMPRESSION_NONE, COMPRESSION_NONE_LEGACY):
+            pass
+        elif compression == COMPRESSION_LZ4:
+            # Region Fixer writes repaired chunks as zlib by default. Reading
+            # LZ4 is supported, but producing lz4-java streams is intentionally
+            # not required for repairs.
+            raise ValueError("Writing LZ4 region chunks is not supported; use zlib")
+        else:
             raise ValueError("Unknown compression type %d" % compression)
+
         length = len(data)
+        requested_sectors = self._bytes_to_sector(length + 5)
+        external = requested_sectors >= 256
+        nsectors = 1 if external else requested_sectors
 
-        # 5 extra bytes are required for the chunk block header
-        nsectors = self._bytes_to_sector(length + 5)
-
-        if nsectors >= 256:
-            raise ChunkDataError("Chunk is too large (%d sectors exceeds 255 maximum)" % (nsectors))
+        # Determine the sidecar path before modifying the region file.
+        external_path = self._external_chunk_path(x, z) if external else None
 
         # Ensure file has a header
         if self.size < 2*SECTOR_LENGTH:
             self._init_file()
 
-        # search for a place where to write the chunk:
         current = self.metadata[x, z]
+        old_external_path = None
+        if current.external:
+            try:
+                old_external_path = self._external_chunk_path(x, z)
+            except ChunkDataError:
+                pass
+
         free_sectors = self._locate_free_sectors(ignore_chunk=current)
         sector = self._find_free_location(free_sectors, nsectors, preferred=current.blockstart)
 
-        # If file is smaller than sector*SECTOR_LENGTH (it was truncated), pad it with zeroes.
         if self.size < sector*SECTOR_LENGTH:
-            # jump to end of file
             self.file.seek(0, SEEK_END)
             self.file.write((sector*SECTOR_LENGTH - self.size) * b"\x00")
             assert self.file.tell() == sector*SECTOR_LENGTH
 
-        # write out chunk to region
-        self.file.seek(sector*SECTOR_LENGTH)
-        self.file.write(pack(">I", length + 1)) #length field
-        self.file.write(pack(">B", compression)) #compression field
-        self.file.write(data) #compressed data
+        # For oversized chunks Minecraft stores only a flagged compression byte
+        # in the region and puts the compressed payload in c.<x>.<z>.mcc.
+        if external:
+            temporary_path = external_path + ".tmp-regionfixer"
+            with open(temporary_path, "wb") as external_file:
+                external_file.write(data)
+                external_file.flush()
+                os.fsync(external_file.fileno())
+            os.replace(temporary_path, external_path)
+            stored_length = 1
+            stored_compression = compression | EXTERNAL_CHUNK_FLAG
+            payload = b""
+        else:
+            stored_length = length + 1
+            stored_compression = compression
+            payload = data
 
-        # Write zeros up to the end of the chunk
-        remaining_length = SECTOR_LENGTH * nsectors - length - 5
+        self.file.seek(sector*SECTOR_LENGTH)
+        self.file.write(pack(">I", stored_length))
+        self.file.write(pack(">B", stored_compression))
+        self.file.write(payload)
+
+        remaining_length = SECTOR_LENGTH * nsectors - len(payload) - 5
         self.file.write(remaining_length * b"\x00")
 
-        #seek to header record and write offset and length records
         self.file.seek(4 * (x + 32*z))
         self.file.write(pack(">IB", sector, nsectors)[1:])
 
-        #write timestamp
         self.file.seek(SECTOR_LENGTH + 4 * (x + 32*z))
         timestamp = int(time.time())
         self.file.write(pack(">I", timestamp))
 
-        # Update free_sectors with newly written block
-        # This is required for calculating file truncation and zeroing freed blocks.
         free_sectors.extend((sector + nsectors - len(free_sectors)) * [True])
         for s in range(sector, sector + nsectors):
             free_sectors[s] = False
-        
-        # Check if file should be truncated:
+
         truncate_count = list(reversed(free_sectors)).index(False)
         if truncate_count > 0:
             self.size = SECTOR_LENGTH * (len(free_sectors) - truncate_count)
             self.file.truncate(self.size)
             free_sectors = free_sectors[:-truncate_count]
-        
-        # Calculate freed sectors
+
         for s in range(current.blockstart, min(current.blockstart + current.blocklength, len(free_sectors))):
             if free_sectors[s]:
-                # zero sector s
                 self.file.seek(SECTOR_LENGTH*s)
                 self.file.write(SECTOR_LENGTH*b'\x00')
-        
-        # update file size and header information
+
+        # If the old representation used a sidecar and the new one does not,
+        # remove the stale sidecar after the region write succeeds.
+        if old_external_path and not external and os.path.exists(old_external_path):
+            os.remove(old_external_path)
+
         self.size = max((sector + nsectors)*SECTOR_LENGTH, self.size)
         assert self.get_size() == self.size
         current.blockstart = sector
         current.blocklength = nsectors
         current.status = STATUS_CHUNK_OK
         current.timestamp = timestamp
-        current.length = length + 1
-        current.compression = COMPRESSION_ZLIB
-
-        # self.parse_header()
-        # self.parse_chunk_headers()
+        current.length = stored_length
+        current.compression = compression
+        current.external = external
 
     def write_chunk(self, x, z, nbt_file):
         """
@@ -740,6 +803,13 @@ class RegionFile(object):
 
         # Check if file should be truncated:
         current = self.metadata[x, z]
+        if current.external:
+            try:
+                external_path = self._external_chunk_path(x, z)
+                if os.path.exists(external_path):
+                    os.remove(external_path)
+            except ChunkDataError:
+                pass
         free_sectors = self._locate_free_sectors(ignore_chunk=current)
         truncate_count = list(reversed(free_sectors)).index(False)
         if truncate_count > 0:

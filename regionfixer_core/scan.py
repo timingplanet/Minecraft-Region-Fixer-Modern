@@ -732,20 +732,19 @@ def scan_data(scanned_dat_file):
     If something is wrong it will return a tuple with useful info
     to debug the problem.
 
-    NOTE: idcounts.dat (number of map files) is a nbt file and
-    is not compressed, we handle the  special case here.
+    NOTE: idcounts.dat (legacy map id counter) is uncompressed NBT.
+    Modern Minecraft uses last_id.dat; that file keeps the same
+    special handling.
 
     """
 
     s = scanned_dat_file
     try:
-        if s.filename == 'idcounts.dat':
-            # TODO: This is ugly
-            # Open the file and create a buffer, this way
-            # NBT won't try to de-gzip the file
-            f = open(s.path)
-
-            _ = nbt.NBTFile(buffer=f)
+        if s.filename in ('idcounts.dat', 'last_id.dat'):
+            # These map-id counter files are raw/uncompressed NBT. Open them
+            # in binary mode and pass a buffer so NBTFile does not try gzip.
+            with open(s.path, 'rb') as f:
+                _ = nbt.NBTFile(buffer=f)
         else:
             _ = nbt.NBTFile(filename=s.path)
         s.status = c.DATAFILE_OK

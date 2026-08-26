@@ -1,0 +1,36 @@
+name: compatibility-tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.9', '3.11', '3.13']
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile Python source
+        run: python -m compileall -q regionfixer.py regionfixer_core nbt mutf8 progressbar tests
+
+      - name: Run compatibility tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Verify CLI help
+        run: python regionfixer.py --help
+
+      - name: Verify CLI version
+        run: python regionfixer.py --version

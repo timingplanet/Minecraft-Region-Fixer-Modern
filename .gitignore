@@ -1,2 +1,13 @@
-# bytecompiled python files
+# Python bytecode / caches
 *.pyc
+__pycache__/
+.pytest_cache/
+
+# Local build/output
+build/
+dist/
+*.egg-info/
+
+# Local logs / reports
+*.log
+error.log

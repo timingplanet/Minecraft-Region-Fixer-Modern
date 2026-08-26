@@ -24,16 +24,55 @@
 from glob import glob
 from os.path import join, split, exists, isfile
 from os import remove
+import os
 from shutil import copy
 import zlib
 import sys
 
 import nbt.region as region
 import nbt.nbt as nbt
-from .util import table
 from nbt.nbt import TAG_List
 
 import regionfixer_core.constants as c
+
+
+def _summary_table(headers, rows):
+    """Return a simple left-aligned ASCII table suitable for terminals/logs."""
+    rows = [list(map(str, row)) for row in rows]
+    headers = list(map(str, headers))
+    all_rows = [headers] + rows
+    widths = [max(len(row[i]) for row in all_rows) for i in range(len(headers))]
+
+    def render(row):
+        return "  ".join(value.ljust(widths[i]) for i, value in enumerate(row)).rstrip()
+
+    text = render(headers) + "\n"
+    text += render(["-" * width for width in widths]) + "\n"
+    for row in rows:
+        text += render(row) + "\n"
+    return text.rstrip()
+
+
+def _summary_kv(rows):
+    """Return aligned key/value rows."""
+    if not rows:
+        return ""
+    width = max(len(str(key)) for key, _value in rows)
+    return "\n".join("  {0:<{1}}  {2}".format(key, width, value) for key, value in rows)
+
+
+def _problem_total(counts, problems):
+    return sum(counts.get(status, 0) for status in problems)
+
+
+def _fmt_count(value):
+    """Format integer counts for large-world terminal summaries."""
+    return "{0:,}".format(int(value))
+
+
+def _plural(value, singular, plural=None):
+    plural = plural if plural is not None else singular + "s"
+    return singular if value == 1 else plural
 
 
 
@@ -614,13 +653,20 @@ class DataFileSet(DataSet):
      - title -- Some user readable string to represent the DataSet
     """
 
-    def __init__(self, path, title, *args, **kwargs):
+    def __init__(self, path, title, recursive=False, *args, **kwargs):
         DataSet.__init__(self, ScannedDataFile, *args, **kwargs)
         d = self._set
 
         self.title = title
         self.path = path
-        data_files_path = glob(join(path, "*.dat"))
+        if recursive and exists(path):
+            data_files_path = []
+            for root, _directories, filenames in os.walk(path):
+                for filename in filenames:
+                    if filename.endswith(".dat"):
+                        data_files_path.append(join(root, filename))
+        else:
+            data_files_path = glob(join(path, "*.dat"))
 
         for path in data_files_path:
             d[path] = ScannedDataFile(path)
@@ -646,8 +692,11 @@ class DataFileSet(DataSet):
         assert isinstance(s, self._typevalue)
         self._counts[s.status] += 1
 
-    def count_datafiles(self, status):
-        pass
+    def count_datafiles(self, status=None):
+        """Count data files, optionally limited to a scan status."""
+        if status is None:
+            return len(self._set)
+        return sum(1 for item in self._set.values() if item.status == status)
 
     def summary(self):
         """ Return a summary of problems found in this set. """
@@ -730,21 +779,42 @@ class RegionSet(DataSet):
             return ""
 
     def _get_dimension_directory(self):
-        """ Returns a string with the parent directory containing the RegionSet.
-        
-        If there is no such a directory returns None. If it's composed
-        of sparse region files returns 'regionset'.
-    
+        """Return a canonical dimension id for this RegionSet.
+
+        Modern Minecraft stores dimensions under
+        ``dimensions/<namespace>/<dimension>/``.  Older worlds instead store
+        the Overworld at the world root and the vanilla Nether/End in DIM-1
+        and DIM1.  Normalising both layouts lets modern and legacy worlds use backups
+        across the storage-layout migration.
         """
 
-        if self.path:
-            if self.overworld :
-                return ""
-            rest, type_dir = split(self.path)
-            rest, dim_path = split(rest)
-            return dim_path
-        else:
+        if not self.path:
             return None
+
+        normal_path = os.path.normpath(self.path)
+        dimension_root = os.path.dirname(normal_path)
+        parts = dimension_root.split(os.sep)
+
+        # Modern namespaced-dimension layout. Use the last "dimensions" component in
+        # case a parent directory happens to have the same name.
+        dimensions_indexes = [i for i, part in enumerate(parts) if part == "dimensions"]
+        if dimensions_indexes:
+            index = dimensions_indexes[-1]
+            dimension_parts = parts[index + 1:]
+            if dimension_parts:
+                return "/".join(dimension_parts)
+
+        # Legacy vanilla layout. Canonical names match the modern resource
+        # locations so backup replacement works across the storage migration.
+        if self.overworld:
+            return "minecraft/overworld"
+
+        legacy_name = os.path.basename(dimension_root)
+        legacy_dimensions = {
+            "DIM-1": "minecraft/the_nether",
+            "DIM1": "minecraft/the_end",
+        }
+        return legacy_dimensions.get(legacy_name, legacy_name)
 
     def _get_region_type_directory(self):
         """ Returns a string with the directory containing the RegionSet.
@@ -1014,75 +1084,66 @@ class RegionSet(DataSet):
             self[r].rescan_entities(options)
 
     def generate_report(self, standalone):
-        """ Generates a report with the results of the scan.
-        
-        Inputs:
-         - standalone -- If true the report will be a human readable String. If false the 
-                         report will be a dictionary with all the counts of chunks and regions.
-        
-        Return if standalone = True:
-         - text -- A human readable string of text with the results of the scan.
-         
-        Return if standlone = False:
-         - chunk_counts -- Dictionary with all the counts of chunks for all the statuses. To read
-                           it use the CHUNK_* constants. 
-         - region_counts -- Dictionary with all the counts of region files for all the statuses. To read
-                            it use the REGION_* constants.
+        """Generate scan counts or a detailed human-readable summary.
 
+        The non-standalone return value remains compatible with the original
+        Region Fixer API: ``(chunk_counts, region_counts)``.
         """
-
-        # collect chunk data
-        chunk_counts = {}
-        has_chunk_problems = False
-        for p in c.CHUNK_PROBLEMS:
-            chunk_counts[p] = self.count_chunks(p)
-            if chunk_counts[p] != 0:
-                has_chunk_problems = True
+        chunk_counts = {status: self.count_chunks(status) for status in c.CHUNK_STATUSES}
         chunk_counts['TOTAL'] = self.count_chunks()
-
-        # collect region data
-        region_counts = {}
-        has_region_problems = False
-        for p in c.REGION_PROBLEMS:
-            region_counts[p] = self.count_regions(p)
-            if region_counts[p] != 0:
-                has_region_problems = True
+        region_counts = {status: self.count_regions(status) for status in c.REGION_STATUSES}
         region_counts['TOTAL'] = self.count_regions()
 
-        # create a text string with a report of all found
-        if standalone:
-            text = ""
+        if not standalone:
+            legacy_chunk_counts = {status: chunk_counts[status] for status in c.CHUNK_PROBLEMS}
+            legacy_chunk_counts['TOTAL'] = chunk_counts['TOTAL']
+            legacy_region_counts = {status: region_counts[status] for status in c.REGION_PROBLEMS}
+            legacy_region_counts['TOTAL'] = region_counts['TOTAL']
+            return legacy_chunk_counts, legacy_region_counts
 
-            # add all chunk info in a table format
-            text += "\nChunk problems:\n"
-            if has_chunk_problems:
-                table_data = []
-                table_data.append(['Problem', 'Count'])
-                for p in c.CHUNK_PROBLEMS:
-                    if chunk_counts[p] != 0:
-                        table_data.append([c.CHUNK_STATUS_TEXT[p], chunk_counts[p]])
-                table_data.append(['Total', chunk_counts['TOTAL']])
-                text += table(table_data)
-            else:
-                text += "No problems found.\n"
+        chunk_problem_total = _problem_total(chunk_counts, c.CHUNK_PROBLEMS)
+        region_problem_total = _problem_total(region_counts, c.REGION_PROBLEMS)
+        total_problems = chunk_problem_total + region_problem_total
 
-            # add all region information
-            text += "\n\nRegion problems:\n"
-            if has_region_problems:
-                table_data = []
-                table_data.append(['Problem', 'Count'])
-                for p in c.REGION_PROBLEMS:
-                    if region_counts[p] != 0:
-                        table_data.append([c.REGION_STATUS_TEXT[p], region_counts[p]])
-                table_data.append(['Total', region_counts['TOTAL']])
-                text += table(table_data)
+        lines = [
+            "=" * 72,
+            "SCAN SUMMARY - SELECTED REGION FILES",
+            "=" * 72,
+            _summary_kv([
+                ("Overall result", "CLEAN" if total_problems == 0 else "ISSUES FOUND"),
+                ("Region files scanned", _fmt_count(region_counts['TOTAL'])),
+                ("Chunks scanned", _fmt_count(chunk_counts['TOTAL'])),
+            ]),
+            "",
+            "CHUNK HEALTH",
+        ]
+        chunk_rows = [
+            ("OK", _fmt_count(chunk_counts.get(c.CHUNK_OK, 0))),
+            ("Problems", _fmt_count(chunk_problem_total)),
+        ]
+        for status in c.CHUNK_PROBLEMS:
+            chunk_rows.append((c.CHUNK_STATUS_TEXT[status], _fmt_count(chunk_counts.get(status, 0))))
+        lines.append(_summary_kv(chunk_rows))
 
-            else:
-                text += "No problems found."
+        lines.extend(["", "REGION FILE HEALTH"] )
+        region_rows = [
+            ("OK", _fmt_count(region_counts.get(c.REGION_OK, 0))),
+            ("Problems", _fmt_count(region_problem_total)),
+        ]
+        for status in c.REGION_PROBLEMS:
+            region_rows.append((c.REGION_STATUS_TEXT[status], _fmt_count(region_counts.get(status, 0))))
+        lines.append(_summary_kv(region_rows))
 
-            return text
+        lines.extend(["", "RESULT"] )
+        if total_problems == 0:
+            lines.append("  CLEAN - No problems found. No chunk or region problems were detected.")
         else:
-            return chunk_counts, region_counts
+            lines.append("  ISSUES FOUND - {0} chunk {1} and {2} region {3}.".format(
+                _fmt_count(chunk_problem_total), _plural(chunk_problem_total, "problem"),
+                _fmt_count(region_problem_total), _plural(region_problem_total, "problem")))
+            lines.append("  Use --log <file> for exact problematic chunk/file locations.")
+        lines.append("=" * 72)
+        return "\n".join(lines)
 
     def remove_problematic_regions(self, status):
         """ Removes all the regions files with the given status. See the warning!
@@ -1100,7 +1161,12 @@ class RegionSet(DataSet):
 
         counter = 0
         for r in self.list_regions(status):
-            remove(r.get_path())
+            region_path = r.get_path()
+            # Oversized chunks may live in sibling c.<x>.<z>.mcc files.
+            # Remove those sidecars with the region so they are not orphaned.
+            for external_path in _external_chunk_files_for_region(region_path):
+                remove(external_path)
+            remove(region_path)
             counter += 1
         return counter
 
@@ -1118,20 +1184,38 @@ class World:
     def __init__(self, world_path):
         self.path = world_path
 
-        # list with RegionSets
+        # List with RegionSets. Modern worlds can store dimensions under
+        # dimensions/<namespace>/<dimension>/{region,poi,entities}. Discover
+        # both that layout and the legacy root/DIM* layout. Only add folders
+        # that actually exist so an empty legacy placeholder cannot shadow the
+        # matching modern RegionSet when using backups.
         self.regionsets = []
+        region_type_directories = (c.LEVEL_DIR, c.POI_DIR, c.ENTITIES_DIR)
+        discovered = []
 
-        self.regionsets.append(RegionSet(join(self.path, "region")))
-        for directory in glob(join(self.path, "DIM*/region")):
-            self.regionsets.append(RegionSet(directory, overworld=False))
+        for region_type in region_type_directories:
+            legacy_overworld = join(self.path, region_type)
+            if os.path.isdir(legacy_overworld):
+                discovered.append((legacy_overworld, True))
+            for directory in glob(join(self.path, "DIM*", region_type)):
+                if os.path.isdir(directory):
+                    discovered.append((directory, False))
 
-        self.regionsets.append(RegionSet(join(self.path, "poi")))
-        for directory in glob(join(self.path, "DIM*/poi")):
-            self.regionsets.append(RegionSet(directory, overworld=False))
+        modern_dimensions = join(self.path, "dimensions")
+        if os.path.isdir(modern_dimensions):
+            for directory, child_directories, _filenames in os.walk(modern_dimensions):
+                if os.path.basename(directory) in region_type_directories:
+                    discovered.append((directory, False))
+                    # A region-data folder should not contain dimension folders.
+                    child_directories[:] = []
 
-        self.regionsets.append(RegionSet(join(self.path, "entities")))
-        for directory in glob(join(self.path, "DIM*/entities")):
-            self.regionsets.append(RegionSet(directory, overworld=False))
+        seen = set()
+        for directory, overworld in discovered:
+            normalized = os.path.normcase(os.path.abspath(directory))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            self.regionsets.append(RegionSet(directory, overworld=overworld))
 
         # level.dat
         # Let's scan level.dat here so we can extract the world name
@@ -1153,31 +1237,47 @@ class World:
             self.scanned_level = ScannedDataFile(level_dat_path)
             self.scanned_level.status = c.DATAFILE_UNREADABLE
 
-        # Player files
+        # Player/data files. Modern worlds can store UUID player data under
+        # playerdata/ to players/data/ and made data/ files namespaced.
         self.datafilesets = []
-        PLAYERS_DIRECTORY = 'playerdata'
-        OLD_PLAYERS_DIRECTORY = ' players'
-        STRUCTURES_DIRECTORY = 'data'
+        modern_players_directory = join(self.path, 'players', 'data')
+        legacy_players_directory = join(self.path, 'playerdata')
+        players_directory = (modern_players_directory if exists(modern_players_directory)
+                             else legacy_players_directory)
 
-        self.players = DataFileSet(join(self.path, PLAYERS_DIRECTORY),
+        self.players = DataFileSet(players_directory,
                                    "\nPlayer UUID files:\n")
         self.datafilesets.append(self.players)
-        self.old_players = DataFileSet(join(self.path, OLD_PLAYERS_DIRECTORY),
+        # Very old (pre-UUID) player files lived directly in players/. On a
+        # modern world this directory may only contain subdirectories, so a
+        # non-recursive scan safely finds none here.
+        self.old_players = DataFileSet(join(self.path, 'players'),
                                        "\nOld format player files:\n")
         self.datafilesets.append(self.old_players)
-        self.data_files = DataFileSet(join(self.path, STRUCTURES_DIRECTORY),
-                                      "\nStructures and map data files:\n")
+        self.data_files = DataFileSet(join(self.path, 'data'),
+                                      "\nStructures and map data files:\n",
+                                      recursive=True)
+
+        # Modern worlds can also store dimension-specific NBT data in each
+        # dimension's data/<namespace>/ tree (for example the End dragon
+        # fight). Keep these files in the existing data_files DataFileSet so
+        # the scanner/reporting behavior stays exactly the same for callers.
+        if os.path.isdir(modern_dimensions):
+            for directory, _child_directories, filenames in os.walk(modern_dimensions):
+                if os.path.basename(directory) != 'data':
+                    continue
+                for data_root, _data_directories, data_filenames in os.walk(directory):
+                    for filename in data_filenames:
+                        if filename.endswith('.dat'):
+                            data_path = join(data_root, filename)
+                            self.data_files._set[data_path] = ScannedDataFile(data_path)
+
         self.datafilesets.append(self.data_files)
 
-        # Does it look like a world folder?
-        region_files = False
-        for region_directory in self.regionsets:
-            if region_directory:
-                region_files = True
-        if region_files:
-            self.isworld = True
-        else:
-            self.isworld = False
+        # level.dat is sufficient to identify a world even if all region files
+        # are currently missing/corrupt. This also avoids rejecting freshly
+        # modern worlds during discovery.
+        self.isworld = exists(level_dat_path) or any(len(r) for r in self.regionsets)
         # TODO: Make a Exception for this! so we can use try/except
 
         # Set in scan.py, used in interactive.py
@@ -1358,24 +1458,25 @@ class World:
 
         counter = 0
         scanned_regions = {}
+        requested_status = status
         for regionset in self.regionsets:
             for backup in backup_worlds:
-                # choose the correct regionset based on the dimension
-                # folder name and the type name (region, POI and entities)
+                # choose the correct regionset based on the canonical dimension
+                # id and the type name (region, POI and entities)
+                b_regionset = None
                 for temp_regionset in backup.regionsets:
                     if ( temp_regionset._get_dimension_directory() == regionset._get_dimension_directory() and
                          temp_regionset._get_region_type_directory() == regionset._get_region_type_directory()):
                         b_regionset = temp_regionset
                         break
 
-                # this don't need to be aware of region status, it just
+                # this doesn't need to be aware of region status, it just
                 # iterates the list returned by list_chunks()
-                bad_chunks = regionset.list_chunks(status)
+                bad_chunks = regionset.list_chunks(requested_status)
 
-                if ( bad_chunks and
-                     b_regionset._get_dimension_directory() != regionset._get_dimension_directory() and
-                     b_regionset._get_region_type_directory() != regionset._get_region_type_directory() ):
-                    print("The regionset \'{0}\' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
+                if bad_chunks and b_regionset is None:
+                    print("The regionset '{0}' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
+                    continue
                 else:
                     for ck in bad_chunks:
                         global_coords = ck[0]
@@ -1392,13 +1493,16 @@ class World:
                             # absolutely needed to detect sharing offset chunks
                             # The backups world doesn't change, check if the
                             # region_file is already scanned:
+                            # Region coordinates alone are not unique across
+                            # dimensions/types (every dimension can have an
+                            # r.0.0.mca). Cache by the actual backup path.
+                            cache_key = os.path.normcase(os.path.abspath(backup_region_path))
                             try:
-                                coords = get_region_coords(split(backup_region_path)[1])
-                                r = scanned_regions[coords]
+                                r = scanned_regions[cache_key]
                             except KeyError:
                                 from .scan import scan_region_file
                                 r = scan_region_file(ScannedRegionFile(backup_region_path), entity_limit, delete_entities)
-                                scanned_regions[r.coords] = r
+                                scanned_regions[cache_key] = r
                             try:
                                 status_tuple = r[local_coords]
                             except KeyError:
@@ -1406,11 +1510,11 @@ class World:
 
                             # Retrive the status from status_tuple
                             if status_tuple == None:
-                                status = c.CHUNK_NOT_CREATED
+                                backup_status = c.CHUNK_NOT_CREATED
                             else:
-                                status = status_tuple[c.TUPLE_STATUS]
+                                backup_status = status_tuple[c.TUPLE_STATUS]
 
-                            if status == c.CHUNK_OK:
+                            if backup_status == c.CHUNK_OK:
                                 backup_region_file = region.RegionFile(backup_region_path)
                                 working_chunk = backup_region_file.get_chunk(local_coords[0], local_coords[1])
 
@@ -1426,7 +1530,7 @@ class World:
                                 print("Chunk replaced using backup dir: {0}".format(backup.path))
 
                             else:
-                                print("Can't use this backup directory, the chunk has the status: {0}".format(c.CHUNK_STATUS_TEXT[status]))
+                                print("Can't use this backup directory, the chunk has the status: {0}".format(c.CHUNK_STATUS_TEXT[backup_status]))
                                 continue
 
                         else:
@@ -1495,8 +1599,9 @@ class World:
         counter = 0
         for regionset in self.regionsets:
             for backup in backup_worlds:
-                # choose the correct regionset based on the dimension
-                # folder name and the type name (region, POI and entities)
+                # choose the correct regionset based on the canonical dimension
+                # id and the type name (region, POI and entities)
+                b_regionset = None
                 for temp_regionset in backup.regionsets:
                     if ( temp_regionset._get_dimension_directory() == regionset._get_dimension_directory() and
                          temp_regionset._get_region_type_directory() == regionset._get_region_type_directory()):
@@ -1504,10 +1609,9 @@ class World:
                         break
 
                 bad_regions = regionset.list_regions(status)
-                if ( bad_regions and
-                     b_regionset._get_dimension_directory() != regionset._get_dimension_directory() and
-                     b_regionset._get_region_type_directory() != regionset._get_region_type_directory() ):
-                    print("The regionset \'{0}\' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
+                if bad_regions and b_regionset is None:
+                    print("The regionset '{0}' doesn't exist in the backup directory. Skipping this backup directory.".format(regionset._get_dim_type_string()))
+                    continue
                 else:
                     for r in bad_regions:
                         print("\n{0:-^60}".format(' New region file to replace! Coords {0} '.format(r.get_coords())))
@@ -1532,6 +1636,7 @@ class World:
                                 print("Can't use this backup directory, unknown error: {0}".format(e))
                                 continue
                             copy(backup_region_path, tofix_region_path)
+                            _sync_external_chunk_files(backup_region_path, tofix_region_path)
                             print("Region file replaced!")
                             counter += 1
                         else:
@@ -1582,97 +1687,167 @@ class World:
         for regionset in self.regionsets:
             regionset.rescan_entities(options)
 
-    def generate_report(self, standalone): 
-        """ Generates a report with the results of the scan.
-        
-        Inputs:
-         - standalone -- Boolean, if true the report will be a human readable String. If false the 
-                         report will be a dictionary with all the counts of chunks and regions.
-        
-        Return if standalone = True:
-         - text -- A human readable string of text with the results of the scan.
-         
-        Return if standlone = False:
-         - chunk_counts -- Dictionary with all the counts of chunks for all the statuses. To read
-                           it use the CHUNK_* constants. 
-         - region_counts -- Dictionary with all the counts of region files for all the statuses. To read
-                            it use the REGION_* constants.
+    def generate_report(self, standalone):
+        """Generate scan counts or a detailed human-readable world summary.
 
+        ``standalone=False`` keeps the original ``(chunk_counts,
+        region_counts)`` interface. ``standalone=True`` provides a detailed
+        terminal summary without replacing the exact-location output available
+        through ``--log``.
         """
-
-        # collect chunk data
-        chunk_counts = {}
-        has_chunk_problems = False
-        for p in c.CHUNK_PROBLEMS:
-            chunk_counts[p] = self.count_chunks(p)
-            if chunk_counts[p] != 0:
-                has_chunk_problems = True
+        chunk_counts = {status: self.count_chunks(status) for status in c.CHUNK_STATUSES}
         chunk_counts['TOTAL'] = self.count_chunks()
-
-        # collect region data
-        region_counts = {}
-        has_region_problems = False
-        for p in c.REGION_PROBLEMS:
-            region_counts[p] = self.count_regions(p)
-            if region_counts[p] != 0:
-                has_region_problems = True
+        region_counts = {status: self.count_regions(status) for status in c.REGION_STATUSES}
         region_counts['TOTAL'] = self.count_regions()
 
-        # create a text string with a report of all found
-        if standalone:
-            text = ""
+        if not standalone:
+            legacy_chunk_counts = {status: chunk_counts[status] for status in c.CHUNK_PROBLEMS}
+            legacy_chunk_counts['TOTAL'] = chunk_counts['TOTAL']
+            legacy_region_counts = {status: region_counts[status] for status in c.REGION_PROBLEMS}
+            legacy_region_counts['TOTAL'] = region_counts['TOTAL']
+            return legacy_chunk_counts, legacy_region_counts
 
-            # add all the player files with problems
-            text += "\nUnreadable player files:\n"
-            broken_players = [p for p in self.players._get_list() if p.status in c.DATAFILE_PROBLEMS]
-            broken_players.extend([p for p in self.old_players._get_list() if p.status in c.DATAFILE_PROBLEMS])
-            if broken_players:
-                broken_player_files = [p.filename for p in broken_players]
-                text += "\n".join(broken_player_files)
-                text += "\n"
+        chunk_problem_total = _problem_total(chunk_counts, c.CHUNK_PROBLEMS)
+        region_problem_total = _problem_total(region_counts, c.REGION_PROBLEMS)
+
+        uuid_total = len(self.players)
+        uuid_bad = sum(1 for item in self.players._get_list() if item.status in c.DATAFILE_PROBLEMS)
+        old_player_total = len(self.old_players)
+        old_player_bad = sum(1 for item in self.old_players._get_list() if item.status in c.DATAFILE_PROBLEMS)
+        data_total = len(self.data_files)
+        data_bad = sum(1 for item in self.data_files._get_list() if item.status in c.DATAFILE_PROBLEMS)
+        level_bad = 1 if self.scanned_level.status in c.DATAFILE_PROBLEMS else 0
+        data_problem_total = uuid_bad + old_player_bad + data_bad + level_bad
+        total_problems = chunk_problem_total + region_problem_total + data_problem_total
+
+        modern_layout = False
+        legacy_layout = False
+        world_root = os.path.normcase(os.path.abspath(self.path))
+        for regionset in self.regionsets:
+            if not regionset.path:
+                continue
+            region_path = os.path.normcase(os.path.abspath(regionset.path))
+            try:
+                relative = os.path.relpath(region_path, world_root)
+            except ValueError:
+                relative = region_path
+            if relative == 'dimensions' or relative.startswith('dimensions' + os.sep):
+                modern_layout = True
             else:
-                text += "No problems found.\n"
-
-            # Now all the data files
-            text += "\nUnreadable data files:\n"
-            broken_data_files = [d for d in self.data_files._get_list() if d.status in c.DATAFILE_PROBLEMS]
-            if broken_data_files:
-                broken_data_filenames = [p.filename for p in broken_data_files]
-                text += "\n".join(broken_data_filenames)
-                text += "\n"
-            else:
-                text += "No problems found.\n"
-
-            # add all chunk info in a table format
-            text += "\nChunk problems:\n"
-            if has_chunk_problems:
-                table_data = []
-                table_data.append(['Problem', 'Count'])
-                for p in c.CHUNK_PROBLEMS:
-                    if chunk_counts[p] != 0:
-                        table_data.append([c.CHUNK_STATUS_TEXT[p], chunk_counts[p]])
-                table_data.append(['Total', chunk_counts['TOTAL']])
-                text += table(table_data)
-            else:
-                text += "No problems found.\n"
-
-            # add all region information
-            text += "\n\nRegion problems:\n"
-            if has_region_problems:
-                table_data = []
-                table_data.append(['Problem', 'Count'])
-                for p in c.REGION_PROBLEMS:
-                    if region_counts[p] != 0:
-                        table_data.append([c.REGION_STATUS_TEXT[p], region_counts[p]])
-                table_data.append(['Total', region_counts['TOTAL']])
-                text += table(table_data)
-
-            else:
-                text += "No problems found."
-
-            return text
+                legacy_layout = True
+        if modern_layout and legacy_layout:
+            storage_layout = "Mixed legacy and namespaced-dimension layout"
+        elif modern_layout:
+            storage_layout = "Namespaced-dimension layout"
+        elif legacy_layout:
+            storage_layout = "Legacy dimension layout"
         else:
-            return chunk_counts, region_counts
+            storage_layout = "No region directories found"
+
+        data_version = None
+        try:
+            data_version = self.level_data['DataVersion'].value
+        except (AttributeError, KeyError, TypeError):
+            pass
+
+        region_type_counts = self.get_number_regions()
+        level_status = "OK" if not level_bad else c.DATAFILE_STATUS_TEXT.get(
+            self.scanned_level.status, "Unreadable")
+
+        lines = [
+            "=" * 72,
+            "SCAN SUMMARY",
+            "=" * 72,
+        ]
+        overview = [
+            ("World", self.get_name()),
+            ("Path", self.path),
+            ("Overall result", "CLEAN" if total_problems == 0 else "ISSUES FOUND"),
+            ("Storage layout", storage_layout),
+        ]
+        if data_version is not None:
+            overview.append(("DataVersion", data_version))
+        lines.append(_summary_kv(overview))
+
+        lines.extend(["", "FILES SCANNED"] )
+        lines.append(_summary_kv([
+            ("level.dat", level_status),
+            ("Region/Level files", _fmt_count(region_type_counts.get(c.LEVEL_DIR, 0))),
+            ("POI files", _fmt_count(region_type_counts.get(c.POI_DIR, 0))),
+            ("Entities files", _fmt_count(region_type_counts.get(c.ENTITIES_DIR, 0))),
+            ("Total region files", _fmt_count(region_counts['TOTAL'])),
+            ("UUID player files", "{0} total, {1} unreadable".format(_fmt_count(uuid_total), _fmt_count(uuid_bad))),
+            ("Old player files", "{0} total, {1} unreadable".format(_fmt_count(old_player_total), _fmt_count(old_player_bad))),
+            ("World/dimension data files", "{0} total, {1} unreadable".format(_fmt_count(data_total), _fmt_count(data_bad))),
+        ]))
+
+        lines.extend(["", "CHUNK HEALTH"] )
+        chunk_rows = [
+            ("Total scanned", _fmt_count(chunk_counts['TOTAL'])),
+            ("OK", _fmt_count(chunk_counts.get(c.CHUNK_OK, 0))),
+            ("Problems", _fmt_count(chunk_problem_total)),
+        ]
+        for status in c.CHUNK_PROBLEMS:
+            chunk_rows.append((c.CHUNK_STATUS_TEXT[status], _fmt_count(chunk_counts.get(status, 0))))
+        lines.append(_summary_kv(chunk_rows))
+
+        lines.extend(["", "REGION FILE HEALTH"] )
+        region_rows = [
+            ("Total scanned", _fmt_count(region_counts['TOTAL'])),
+            ("OK", _fmt_count(region_counts.get(c.REGION_OK, 0))),
+            ("Problems", _fmt_count(region_problem_total)),
+        ]
+        for status in c.REGION_PROBLEMS:
+            region_rows.append((c.REGION_STATUS_TEXT[status], _fmt_count(region_counts.get(status, 0))))
+        lines.append(_summary_kv(region_rows))
+
+        lines.extend(["", "PLAYER / DATA HEALTH"] )
+        lines.append(_summary_kv([
+            ("level.dat problems", _fmt_count(level_bad)),
+            ("Unreadable UUID player files", _fmt_count(uuid_bad)),
+            ("Unreadable old player files", _fmt_count(old_player_bad)),
+            ("Unreadable world/data files", _fmt_count(data_bad)),
+            ("Total data-file problems", _fmt_count(data_problem_total)),
+        ]))
+
+        lines.extend(["", "DIMENSION / REGION-TYPE BREAKDOWN"] )
+        breakdown = []
+        for regionset in sorted(
+                self.regionsets,
+                key=lambda item: (item._get_dimension_directory() or '',
+                                  item._get_region_type_directory() or '')):
+            dim_id = regionset._get_dimension_directory() or "Unknown"
+            dim_name = c.DIMENSION_NAMES.get(dim_id, dim_id)
+            type_id = regionset._get_region_type_directory() or "Unknown"
+            type_name = c.REGION_TYPES_NAMES.get(type_id, (type_id, type_id))[1]
+            rs_chunk_problems = sum(regionset.count_chunks(status) for status in c.CHUNK_PROBLEMS)
+            rs_region_problems = sum(regionset.count_regions(status) for status in c.REGION_PROBLEMS)
+            breakdown.append([
+                dim_name,
+                type_name,
+                _fmt_count(regionset.count_regions()),
+                _fmt_count(regionset.count_chunks()),
+                _fmt_count(rs_chunk_problems + rs_region_problems),
+            ])
+        if breakdown:
+            lines.append(_summary_table(
+                ["Dimension", "Type", "Regions", "Chunks", "Issues"],
+                breakdown))
+        else:
+            lines.append("  No region sets were discovered.")
+
+        lines.extend(["", "RESULT"] )
+        if total_problems == 0:
+            lines.append("  CLEAN - No problems found. No chunk, region, player, or data-file problems were detected.")
+        else:
+            lines.append(
+                "  ISSUES FOUND - {0} chunk {1}, {2} region {3}, and {4} data-file {5}.".format(
+                    _fmt_count(chunk_problem_total), _plural(chunk_problem_total, "problem"),
+                    _fmt_count(region_problem_total), _plural(region_problem_total, "problem"),
+                    _fmt_count(data_problem_total), _plural(data_problem_total, "problem")))
+            lines.append("  Use --log <file> for exact problematic chunk/file locations.")
+        lines.append("=" * 72)
+        return "\n".join(lines)
 
 
 
@@ -1912,6 +2087,42 @@ def get_chunk_data_coords(nbt_file):
         raise AssertionError("Unrecognized chunk in get_chunk_data_coords().")
 
     return coordX, coordZ
+
+
+def _external_chunk_files_for_region(region_path):
+    """Return external .mcc payloads belonging to a region file."""
+    try:
+        region_x, region_z = get_region_coords(os.path.basename(region_path))
+    except (ValueError, IndexError):
+        return []
+
+    result = []
+    directory = os.path.dirname(region_path)
+    for external_path in glob(join(directory, "c.*.*.mcc")):
+        parts = os.path.basename(external_path).split('.')
+        if len(parts) != 4 or parts[0] != 'c' or parts[3] != 'mcc':
+            continue
+        try:
+            chunk_x = int(parts[1])
+            chunk_z = int(parts[2])
+        except ValueError:
+            continue
+        if chunk_x // 32 == region_x and chunk_z // 32 == region_z:
+            result.append(external_path)
+    return result
+
+
+def _sync_external_chunk_files(source_region_path, destination_region_path):
+    """Mirror external chunk sidecars when replacing a complete region."""
+    if os.path.abspath(source_region_path) == os.path.abspath(destination_region_path):
+        return
+
+    for external_path in _external_chunk_files_for_region(destination_region_path):
+        remove(external_path)
+
+    destination_directory = os.path.dirname(destination_region_path)
+    for external_path in _external_chunk_files_for_region(source_region_path):
+        copy(external_path, join(destination_directory, os.path.basename(external_path)))
 
 
 def get_region_coords(filename):

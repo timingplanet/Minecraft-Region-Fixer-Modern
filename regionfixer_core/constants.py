@@ -234,7 +234,10 @@ for problem in CHUNK_PROBLEMS:
 # Dimension names:
 DIMENSION_NAMES = {"": "Overworld",
                    "DIM1": "The End",
-                   "DIM-1": "Nether"
+                   "DIM-1": "Nether",
+                   "minecraft/overworld": "Overworld",
+                   "minecraft/the_end": "The End",
+                   "minecraft/the_nether": "Nether"
                    }
 
 # Region files types
